@@ -1,0 +1,25 @@
+{
+  "name": "korea-realestate-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc --noEmit",
+    "start:mcp": "node --enable-source-maps dist/mcp/server.js",
+    "collect": "tsx src/scripts/collectAndStore.ts",
+    "dev:mcp": "tsx src/mcp/server.ts"
+  },
+  "dependencies": {
+    "@google-cloud/firestore": "^7.11.2",
+    "@modelcontextprotocol/sdk": "^1.17.5",
+    "dotenv": "^16.4.5",
+    "fast-xml-parser": "^4.5.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

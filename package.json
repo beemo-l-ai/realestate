@@ -10,7 +10,8 @@
     "collect": "tsx src/scripts/collectAndStore.ts",
     "dev:mcp": "tsx src/mcp/server.ts",
     "start:apps": "node --enable-source-maps dist/apps/quickstart/server.js",
-    "dev:apps": "tsx src/apps/quickstart/server.ts"
+    "dev:apps": "tsx src/apps/quickstart/server.ts",
+    "resolve:main-conflicts": "tsx src/scripts/resolveMainConflicts.ts"
   },
   "dependencies": {
     "@google-cloud/firestore": "^7.11.2",

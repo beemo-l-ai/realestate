@@ -19,3 +19,7 @@
 - `src/collector/molitCollector.ts`
 - `src/lib/store.ts`
 - `src/lib/config.ts`
+
+
+## 추가 스크립트
+- `resolveMainConflicts.ts`: `main` 병합 시 알려진 충돌 파일을 자동으로 정리하는 보조 도구

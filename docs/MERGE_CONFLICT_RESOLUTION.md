@@ -44,3 +44,14 @@ npm run check
 - Apps SDK 골격 파일: `src/apps/quickstart/server.ts`
 - Apps 디렉토리 문서: `src/apps/README.md`
 - 실행 스크립트: `package.json`의 `dev:apps`, `start:apps`
+
+
+## 자동 해소 스크립트
+
+충돌 상태에서 아래 명령으로 PR #2 중복 충돌 파일을 자동 해소할 수 있습니다.
+
+```bash
+npm run resolve:main-conflicts
+```
+
+> 스크립트는 알려진 중복 파일에서 `--theirs`를 우선 적용하고, 미해결 파일이 남으면 실패합니다.

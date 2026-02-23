@@ -1,0 +1,17 @@
+{
+  "name": "realestate-apps-sdk-template",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "OpenAI Apps SDK 최소 템플릿 골격 (real-estate demo)",
+  "scripts": {
+    "dev": "node src/server.js",
+    "start": "node src/server.js",
+    "check": "node --check src/server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "express": "^4.21.2",
+    "zod": "^3.24.1"
+  }
+}

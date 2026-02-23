@@ -7,6 +7,7 @@
 
 | 경로 | 역할 | 주로 수정할 파일 |
 |---|---|---|
+| `src/apps` | ChatGPT Apps SDK 템플릿, UI 리소스 연결 계층 | `quickstart/server.ts` |
 | `src/mcp` | MCP 툴 정의, 질의 응답 포맷 | `server.ts` |
 | `src/collector` | 외부 API 호출/정규화 수집 | `molitCollector.ts` |
 | `src/lib` | 공통 타입/설정/저장소 접근 | `types.ts`, `config.ts`, `store.ts`, `firebase.ts` |
@@ -35,6 +36,11 @@
 1. `src/scripts/README.md`
 2. `src/scripts/collectAndStore.ts`
 3. 필요 시 `src/lib/config.ts`
+
+### E) ChatGPT Apps 템플릿/위젯 변경
+1. `src/apps/README.md`
+2. `src/apps/quickstart/server.ts`
+3. 필요 시 `src/lib/types.ts` 또는 Firestore 컬렉션 스키마 문서
 
 ## 3. 작업 규율 (검색 범위 최소화)
 

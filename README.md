@@ -6,6 +6,7 @@
 1. 데이터 수집: 국토부 실거래가(아파트) API 수집
 2. 데이터 저장: Firebase Firestore 적재 + 월별 집계
 3. MCP 서버: GPT가 질의할 수 있는 도구(`search_realestate_trends`, `get_latest_transaction_examples`) 제공
+4. Apps SDK 템플릿: ChatGPT Apps quickstart 스타일의 최소 서버 골격 제공
 
 > 범위: 한국 부동산 중 **수도권(서울/경기/인천)**
 
@@ -56,6 +57,7 @@
 - 코드/개발 규칙: `docs/DEVELOPMENT_RULES.md`
 - 디렉토리별 요약:
   - `src/README.md`
+  - `src/apps/README.md`
   - `src/mcp/README.md`
   - `src/collector/README.md`
   - `src/lib/README.md`
@@ -114,6 +116,16 @@ npm run start:mcp
 ```bash
 npm run dev:mcp
 ```
+
+
+### 4.5 Apps SDK 최소 템플릿 실행
+
+```bash
+npm run dev:apps
+```
+
+- 파일: `src/apps/quickstart/server.ts`
+- 포함 내용: `openai/outputTemplate` 메타데이터, 위젯 HTML 리소스(`ui://...`), 수도권 월별 추이 조회 도구
 
 ---
 

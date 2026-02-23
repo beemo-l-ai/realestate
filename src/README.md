@@ -1,7 +1,8 @@
 # src Directory Guide
 
-`src`는 아래 4개 책임 단위로 분리되어 있습니다.
+`src`는 아래 5개 책임 단위로 분리되어 있습니다.
 
+- `apps`: ChatGPT Apps SDK 템플릿/연동 계층
 - `mcp`: GPT가 호출하는 MCP tool 진입점
 - `collector`: 외부 데이터 소스 수집/정규화
 - `lib`: 공통 타입, 환경설정, 저장 로직

@@ -8,7 +8,9 @@
     "check": "tsc --noEmit",
     "start:mcp": "node --enable-source-maps dist/mcp/server.js",
     "collect": "tsx src/scripts/collectAndStore.ts",
-    "dev:mcp": "tsx src/mcp/server.ts"
+    "dev:mcp": "tsx src/mcp/server.ts",
+    "start:apps": "node --enable-source-maps dist/apps/quickstart/server.js",
+    "dev:apps": "tsx src/apps/quickstart/server.ts"
   },
   "dependencies": {
     "@google-cloud/firestore": "^7.11.2",

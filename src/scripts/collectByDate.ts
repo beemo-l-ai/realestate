@@ -1,6 +1,6 @@
 import { collectTradesByMonth } from "../collector/molitCollector.js";
 import { seoulMetroDistricts } from "../lib/config.js";
-import { makeMonthlyAggregates, upsertMonthlyAggregates, upsertTrades } from "../lib/store.js";
+import { makeMonthlyAggregates, upsertMonthlyAggregates, upsertTrades, upsertApartmentMetadata } from "../lib/store.js";
 
 type Mode = "bootstrap" | "incremental";
 
@@ -48,6 +48,15 @@ const getYearMonths = (startYm: string, endYm: string): string[] => {
   }
 
   return out;
+};
+
+const withTimeout = async <T>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
+  return await Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    }),
+  ]);
 };
 
 const parseCliArgs = (args: string[]): CliArgs => {
@@ -102,13 +111,46 @@ const main = async (): Promise<void> => {
 
   for (const district of seoulMetroDistricts) {
     for (const ym of months) {
-      const trades = await collectTradesByMonth(district.lawdCd, ym, district.region);
-      await upsertTrades(trades);
-      const aggregates = makeMonthlyAggregates(trades);
-      await upsertMonthlyAggregates(aggregates);
-      console.log(
-        `[INGEST] mode=${cliArgs.mode} ${district.region}/${district.lawdCd}/${ym}: trades=${trades.length}, monthlyAgg=${aggregates.length}`,
-      );
+      try {
+        console.log(`[STEP] fetch:start ${district.region}/${district.lawdCd}/${ym}`);
+        const trades = await withTimeout(
+          collectTradesByMonth(district.lawdCd, ym, district.region),
+          30_000,
+          `collectTradesByMonth ${district.region}/${district.lawdCd}/${ym}`,
+        );
+        console.log(`[STEP] fetch:done ${district.region}/${district.lawdCd}/${ym} trades=${trades.length}`);
+
+        console.log(`[STEP] upsertTrades:start ${district.region}/${district.lawdCd}/${ym}`);
+        await withTimeout(
+          upsertTrades(trades),
+          60_000,
+          `upsertTrades ${district.region}/${district.lawdCd}/${ym}`,
+        );
+        console.log(`[STEP] upsertTrades:done ${district.region}/${district.lawdCd}/${ym}`);
+
+        const aggregates = makeMonthlyAggregates(trades);
+        console.log(`[STEP] upsertMonthly:start ${district.region}/${district.lawdCd}/${ym} aggregates=${aggregates.length}`);
+        await withTimeout(
+          upsertMonthlyAggregates(aggregates),
+          60_000,
+          `upsertMonthlyAggregates ${district.region}/${district.lawdCd}/${ym}`,
+        );
+        console.log(`[STEP] upsertMonthly:done ${district.region}/${district.lawdCd}/${ym}`);
+
+        console.log(`[STEP] upsertMetadata:start ${district.region}/${district.lawdCd}/${ym}`);
+        await withTimeout(
+          upsertApartmentMetadata(trades),
+          60_000,
+          `upsertApartmentMetadata ${district.region}/${district.lawdCd}/${ym}`,
+        );
+        console.log(`[STEP] upsertMetadata:done ${district.region}/${district.lawdCd}/${ym}`);
+        console.log(
+          `[INGEST] mode=${cliArgs.mode} ${district.region}/${district.lawdCd}/${ym}: trades=${trades.length}, monthlyAgg=${aggregates.length}`,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`[INGEST_ERROR] mode=${cliArgs.mode} ${district.region}/${district.lawdCd}/${ym}: ${message}`);
+      }
     }
   }
 

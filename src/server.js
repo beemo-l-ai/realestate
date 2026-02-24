@@ -1,7 +1,7 @@
 import express from "express";
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 
 const PORT = Number(process.env.PORT || 3000);
 
@@ -92,26 +92,46 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true, name: "realestate-app", version: "0.1.0" });
 });
 
-app.post("/mcp", async (req, res) => {
-  try {
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined
-    });
+let transport;
 
-    res.on("close", () => {
-      transport.close();
-    });
-
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
-  } catch (error) {
-    console.error("MCP request error", error);
-    if (!res.headersSent) {
-      res.status(500).json({ error: "MCP request failed" });
+app.get(["/", "/sse"], async (req, res) => {
+  console.log("New SSE connection requested");
+  if (transport) {
+    console.log("Closing existing transport for new connection");
+    try {
+      await server.close();
+    } catch (e) {
+      console.error("Error closing existing connection:", e);
     }
+    transport = null;
   }
+
+  const currentTransport = new SSEServerTransport("/mcp", res);
+  transport = currentTransport;
+
+  res.on("close", async () => {
+    console.log("SSE connection closed by client");
+    if (transport === currentTransport) {
+      try {
+        await server.close();
+        transport = null;
+      } catch (e) {
+        console.error("Error closing server on disconnect:", e);
+      }
+    }
+  });
+
+  await server.connect(currentTransport);
+});
+
+app.post("/mcp", async (req, res) => {
+  if (!transport) {
+    res.status(500).json({ error: "No active SSE connection" });
+    return;
+  }
+  await transport.handlePostMessage(req, res);
 });
 
 app.listen(PORT, () => {
-  console.log(`[realestate-app] MCP endpoint listening on http://localhost:${PORT}/mcp`);
+  console.log(`[realestate-app] MCP endpoint listening on http://localhost:${PORT}/sse`);
 });

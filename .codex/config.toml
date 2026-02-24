@@ -1,0 +1,7 @@
+# Project-local Codex settings for git-commit plugin.
+# Codex merges this with ~/.codex/config.toml when running inside this repo.
+
+notify = ["node", "/Users/leesungju/Documents/git/realestate/git-commit/scripts/hook-notify.mjs"]
+
+[features]
+codex_git_commit = true

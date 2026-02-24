@@ -37,24 +37,14 @@ export interface MonthlyAggregate {
   txCount: number;
 }
 
-export interface TradeGroupDocument {
-  id: string;
+export interface ApartmentMetadata {
+  id: string; // "region|districtCode|apartmentName"
   region: string;
   districtCode: string;
-  yearMonth: string;
-  groupKey: string;
   legalDong: string;
   apartmentName: string;
-  trades: TradeRecord[];
-  txCount: number;
-  lastTradedAt: string;
+  availableAreas: number[];
+  totalTrades: number;
+  lastTradeAt: string;
 }
 
-export interface MonthlyAggregateGroupDocument {
-  id: string;
-  region: string;
-  districtCode: string;
-  yearMonth: string;
-  items: MonthlyAggregate[];
-  totalTxCount: number;
-}

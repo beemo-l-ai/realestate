@@ -82,6 +82,10 @@ cp .env.example .env
 - `FIREBASE_CLIENT_EMAIL`
 - `FIREBASE_PRIVATE_KEY`
 - `MOLIT_SERVICE_KEY`
+- `MOLIT_API_BASE` (선택, 기본값: `https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev`)
+
+`MOLIT_SERVICE_KEY`는 **일반 인증키(Decoding)** 값을 권장합니다.
+만약 공공데이터포털의 Encoding 키를 넣어도 실행 시 1회 decode 후 요청하도록 처리되어 있습니다.
 
 ### 4.2 설치/빌드
 

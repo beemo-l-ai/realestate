@@ -23,6 +23,8 @@ jobs:
   collect:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     env:
       PROD_SECRET: ${{ secrets.PROD_SECRET }}
       FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
@@ -33,23 +35,47 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Debug GitHub Actions secret context
+        run: |
+          echo "event_name=${{ github.event_name }}"
+          echo "ref=${{ github.ref }}"
+          echo "actor=${{ github.actor }}"
+          echo "triggering_actor=${{ github.triggering_actor }}"
+          echo "secret_source=${{ github.secret_source }}"
+          echo "workflow=${{ github.workflow }}"
+          echo "::notice::If you store secrets as 'Environment secrets', this job must declare 'environment: <name>' to access them."
+          echo "::notice::Secrets are not passed to workflows triggered from forks or Dependabot."
+
       - name: Load and validate secrets
         run: |
           set -euo pipefail
 
           declare -A parsed
+          parsed_count=0
+          skipped_count=0
           if [ -n "${PROD_SECRET:-}" ]; then
+            echo "PROD_SECRET provided (length=${#PROD_SECRET})."
+            line_number=0
             while IFS= read -r line || [ -n "$line" ]; do
+              ((line_number+=1))
               line="${line%$'\r'}"
+              if [ "$line_number" -eq 1 ]; then
+                # Remove UTF-8 BOM if PROD_SECRET was pasted from an editor that added it.
+                line="${line#$'\xef\xbb\xbf'}"
+              fi
               line="${line#"${line%%[![:space:]]*}"}"
               [ -z "$line" ] && continue
               [[ "$line" =~ ^# ]] && continue
 
-              # Allow both `key=value` and `export key=value` (with optional leading spaces).
-              line="${line#export }"
+              # Allow both `key=value` and `export key=value` (with optional whitespace).
+              if [[ "$line" =~ ^export[[:space:]]+ ]]; then
+                line="${line#export}"
+                line="${line#"${line%%[![:space:]]*}"}"
+              fi
 
               if [[ "$line" != *=* ]]; then
-                echo "::warning::Skipping invalid PROD_SECRET line (expected key=value)."
+                ((skipped_count+=1))
+                echo "::warning::Skipping invalid PROD_SECRET line ${line_number} (expected key=value)."
                 continue
               fi
 
@@ -66,17 +92,35 @@ jobs:
               fi
 
               parsed["$key"]="$value"
+              ((parsed_count+=1))
             done <<< "$PROD_SECRET"
+
+            echo "Parsed PROD_SECRET entries: $parsed_count (skipped: $skipped_count)."
+            if [ "$parsed_count" -gt 0 ]; then
+              echo "Detected keys in PROD_SECRET: $(printf '%s\n' "${!parsed[@]}" | sort | tr '\n' ' ')"
+            fi
           else
             echo "::warning::PROD_SECRET is not set. Falling back to individual GitHub secrets."
           fi
 
           required=(FIREBASE_PROJECT_ID FIREBASE_CLIENT_EMAIL FIREBASE_PRIVATE_KEY MOLIT_SERVICE_KEY)
           for key in "${required[@]}"; do
-            value="${parsed[$key]:-${!key:-}}"
+            source="PROD_SECRET"
+            value="${parsed[$key]:-}"
+            if [ -z "$value" ]; then
+              source="INDIVIDUAL_SECRET"
+              value="${!key:-}"
+            fi
+
+            echo "Checking $key (source=$source, length=${#value})"
             if [ -z "$value" ]; then
               echo "::error::Missing secret: $key"
               echo "::error::Set this in PROD_SECRET as '$key=...' or create a '$key' Actions secret."
+              echo "::error::If '$key' is configured as an Environment secret, add 'jobs.collect.environment: <environment-name>' so this job can read it."
+              echo "::error::Also verify this run is not from a fork/Dependabot context where repository secrets are blocked."
+              if [ "$source" = "INDIVIDUAL_SECRET" ] && [ -n "${PROD_SECRET:-}" ]; then
+                echo "::error::PROD_SECRET was provided but did not contain a usable value for $key."
+              fi
               exit 1
             fi
 

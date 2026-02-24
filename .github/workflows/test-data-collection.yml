@@ -1,0 +1,64 @@
+name: Test Data Collection
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "collectByDate mode"
+        required: true
+        default: "incremental"
+        type: choice
+        options:
+          - incremental
+          - bootstrap
+      from:
+        description: "Start date (YYYY-MM-DD)"
+        required: true
+        default: "2025-01-01"
+      to:
+        description: "End date (YYYY-MM-DD, required for bootstrap)"
+        required: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+      FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+      FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
+      MOLIT_SERVICE_KEY: ${{ secrets.MOLIT_SERVICE_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run check
+
+      - name: Validate secrets
+        run: |
+          required=(FIREBASE_PROJECT_ID FIREBASE_CLIENT_EMAIL FIREBASE_PRIVATE_KEY MOLIT_SERVICE_KEY)
+          for key in "${required[@]}"; do
+            if [ -z "${!key}" ]; then
+              echo "::error::Missing secret: $key"
+              exit 1
+            fi
+          done
+
+      - name: Run collectByDate
+        run: |
+          set -euo pipefail
+          ARGS=(--mode "${{ github.event.inputs.mode }}" --from "${{ github.event.inputs.from }}")
+          if [ -n "${{ github.event.inputs.to }}" ]; then
+            ARGS+=(--to "${{ github.event.inputs.to }}")
+          fi
+          npm run collect:date -- "${ARGS[@]}"

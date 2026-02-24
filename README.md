@@ -138,6 +138,24 @@ npm run dev:apps
 - 파일: `src/apps/quickstart/server.ts`
 - 포함 내용: `openai/outputTemplate` 메타데이터, 위젯 HTML 리소스(`ui://...`), 수도권 월별 추이 조회 도구
 
+
+### 4.6 GitHub Actions로 수집 테스트
+
+수동 실행 워크플로우: `.github/workflows/test-data-collection.yml`
+
+1) 저장소 **Settings → Secrets and variables → Actions**에 아래 시크릿을 추가
+- `FIREBASE_PROJECT_ID`
+- `FIREBASE_CLIENT_EMAIL`
+- `FIREBASE_PRIVATE_KEY`
+- `MOLIT_SERVICE_KEY`
+
+> 참고: **Codespaces secrets와 Actions secrets는 별개**입니다. Actions에서 실행하려면 반드시 Actions 시크릿에 동일 키를 등록해야 합니다.
+
+2) GitHub 탭에서 **Actions → Test Data Collection → Run workflow** 실행
+- `mode`: `incremental` 또는 `bootstrap`
+- `from`: `YYYY-MM-DD`
+- `to`: bootstrap일 때만 입력
+
 ---
 
 ## 5) Firestore 스키마

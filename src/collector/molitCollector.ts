@@ -11,9 +11,63 @@ const toNumber = (raw: string): number => Number(raw.replaceAll(",", "").trim())
 
 const pad2 = (value: string): string => value.padStart(2, "0");
 
-const makeTradeId = (row: RawTradeRow): string => {
+const normalizeServiceKey = (serviceKey: string): string => {
+  if (!serviceKey.includes("%")) {
+    return serviceKey;
+  }
+
+  try {
+    return decodeURIComponent(serviceKey);
+  } catch {
+    return serviceKey;
+  }
+};
+
+const asString = (value: unknown): string | undefined => {
+  if (value === null || value === undefined) return undefined;
+  const normalized = String(value).trim();
+  return normalized.length ? normalized : undefined;
+};
+
+const pickValue = (row: Record<string, unknown>, keys: string[]): string | undefined => {
+  for (const key of keys) {
+    const value = asString(row[key]);
+    if (value) return value;
+  }
+  return undefined;
+};
+
+const normalizeRow = (row: Record<string, unknown>): RawTradeRow | null => {
+  const legalDong = pickValue(row, ["법정동", "법정동명", "umdNm"]);
+  const apartment = pickValue(row, ["아파트", "아파트명", "aptNm"]);
+  const year = pickValue(row, ["년", "년도", "dealYear"]);
+  const month = pickValue(row, ["월", "dealMonth"]);
+  const day = pickValue(row, ["일", "dealDay"]);
+  const area = pickValue(row, ["전용면적", "excluUseAr"]);
+  const amount = pickValue(row, ["거래금액", "거래금액(만원)", "dealAmount"]);
+  const floor = pickValue(row, ["층", "floor"]);
+
+  if (!legalDong || !apartment || !year || !month || !day || !area || !amount || !floor) {
+    return null;
+  }
+
+  return {
+    법정동: legalDong,
+    아파트: apartment,
+    년: year,
+    월: month,
+    일: day,
+    전용면적: area,
+    거래금액: amount,
+    층: floor,
+    지번: pickValue(row, ["지번", "jibun"]) ?? "",
+    지역코드: pickValue(row, ["지역코드", "지역코드값", "sggCd"]) ?? "",
+  };
+};
+
+const makeTradeId = (row: RawTradeRow, districtCode: string): string => {
   return [
-    row.지역코드,
+    row.지역코드 || districtCode,
     row.법정동,
     row.아파트,
     row.년,
@@ -35,7 +89,10 @@ const parseRows = (xml: string): RawTradeRow[] => {
     return [];
   }
 
-  return Array.isArray(items) ? items : [items];
+  const rows = Array.isArray(items) ? items : [items];
+  return rows
+    .map((row) => normalizeRow((row ?? {}) as Record<string, unknown>))
+    .filter((row): row is RawTradeRow => row !== null);
 };
 
 export const collectTradesByMonth = async (
@@ -48,7 +105,7 @@ export const collectTradesByMonth = async (
   }
 
   const url = new URL(config.molitApiBase);
-  url.searchParams.set("serviceKey", config.molitServiceKey);
+  url.searchParams.set("serviceKey", normalizeServiceKey(config.molitServiceKey));
   url.searchParams.set("LAWD_CD", districtCode);
   url.searchParams.set("DEAL_YMD", yearMonth);
   url.searchParams.set("numOfRows", "999");
@@ -71,7 +128,7 @@ export const collectTradesByMonth = async (
     const tradeDate = `${row.년}-${pad2(row.월)}-${pad2(row.일)}`;
 
     return {
-      id: makeTradeId(row),
+      id: makeTradeId(row, districtCode),
       region,
       districtCode,
       legalDong: row.법정동,

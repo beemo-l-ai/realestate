@@ -36,3 +36,25 @@ export interface MonthlyAggregate {
   maxPriceKrw: number;
   txCount: number;
 }
+
+export interface TradeGroupDocument {
+  id: string;
+  region: string;
+  districtCode: string;
+  yearMonth: string;
+  groupKey: string;
+  legalDong: string;
+  apartmentName: string;
+  trades: TradeRecord[];
+  txCount: number;
+  lastTradedAt: string;
+}
+
+export interface MonthlyAggregateGroupDocument {
+  id: string;
+  region: string;
+  districtCode: string;
+  yearMonth: string;
+  items: MonthlyAggregate[];
+  totalTxCount: number;
+}

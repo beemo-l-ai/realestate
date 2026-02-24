@@ -59,9 +59,9 @@ registerAppTool(
       "openai/outputTemplate": UI_TEMPLATE_URI,
     },
   },
-  async ({ region, fromYm, toYm, limit }) => {
+  async ({ region, fromYm, toYm, limit }: { region?: "서울" | "경기" | "인천"; fromYm: string; toYm: string; limit: number }) => {
     let query = firestore
-      .collection("apt_monthly_aggregates")
+      .collection("apt_monthly_aggregate_groups")
       .where("yearMonth", ">=", fromYm)
       .where("yearMonth", "<=", toYm)
       .orderBy("yearMonth", "desc")
@@ -72,16 +72,20 @@ registerAppTool(
     }
 
     const snapshot = await query.get();
-    const rows = snapshot.docs.map((doc) => {
-      const data = doc.data();
-      return {
-        yearMonth: data.yearMonth,
-        region: data.region,
-        apartmentName: data.apartmentName,
-        avgPriceKrw: data.avgPriceKrw,
-        txCount: data.txCount,
-      };
-    });
+    const rows = snapshot.docs
+      .flatMap((doc) => {
+        const data = doc.data();
+        return Array.isArray(data.items) ? data.items : [];
+      })
+      .sort((a, b) => String(b.yearMonth).localeCompare(String(a.yearMonth)))
+      .slice(0, limit)
+      .map((item) => ({
+        yearMonth: item.yearMonth,
+        region: item.region,
+        apartmentName: item.apartmentName,
+        avgPriceKrw: item.avgPriceKrw,
+        txCount: item.txCount,
+      }));
 
     return {
       content: [

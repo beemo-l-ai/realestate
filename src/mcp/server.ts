@@ -26,7 +26,7 @@ server.registerTool(
     inputSchema: searchInputSchema,
   },
   async (input) => {
-    let query = firestore.collection("apt_monthly_aggregates")
+    let query = firestore.collection("apt_monthly_aggregate_groups")
       .where("yearMonth", ">=", input.fromYm)
       .where("yearMonth", "<=", input.toYm)
       .orderBy("yearMonth", "asc")
@@ -40,12 +40,14 @@ server.registerTool(
       query = query.where("districtCode", "==", input.districtCode);
     }
 
-    if (input.apartmentName) {
-      query = query.where("apartmentName", "==", input.apartmentName);
-    }
-
     const snapshot = await query.get();
-    const docs = snapshot.docs.map((doc) => doc.data());
+    const docs = snapshot.docs
+      .flatMap((doc) => {
+        const data = doc.data();
+        return Array.isArray(data.items) ? data.items : [];
+      })
+      .filter((item) => !input.apartmentName || item.apartmentName === input.apartmentName)
+      .sort((a, b) => String(a.yearMonth).localeCompare(String(b.yearMonth)));
 
     if (docs.length === 0) {
       return {
@@ -107,14 +109,22 @@ server.registerTool(
     },
   },
   async (input) => {
-    let query = firestore.collection("apt_transactions").orderBy("tradedAt", "desc").limit(input.limit);
+    let query = firestore.collection("apt_transaction_groups")
+      .orderBy("lastTradedAt", "desc")
+      .limit(Math.max(30, input.limit * 4));
 
     if (input.region) query = query.where("region", "==", input.region);
     if (input.districtCode) query = query.where("districtCode", "==", input.districtCode);
-    if (input.apartmentName) query = query.where("apartmentName", "==", input.apartmentName);
 
     const snapshot = await query.get();
-    const rows = snapshot.docs.map((doc) => doc.data());
+    const rows = snapshot.docs
+      .flatMap((doc) => {
+        const data = doc.data();
+        return Array.isArray(data.trades) ? data.trades : [];
+      })
+      .filter((row) => !input.apartmentName || row.apartmentName === input.apartmentName)
+      .sort((a, b) => String(b.tradedAt).localeCompare(String(a.tradedAt)))
+      .slice(0, input.limit);
 
     return {
       content: [

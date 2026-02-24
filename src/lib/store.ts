@@ -1,17 +1,48 @@
 import { firestore } from "./firebase.js";
-import { MonthlyAggregate, TradeRecord } from "./types.js";
+import { MonthlyAggregate, MonthlyAggregateGroupDocument, TradeGroupDocument, TradeRecord } from "./types.js";
 
-const tradesCollection = firestore.collection("apt_transactions");
-const monthlyCollection = firestore.collection("apt_monthly_aggregates");
+const tradeGroupCollection = firestore.collection("apt_transaction_groups");
+const monthlyGroupCollection = firestore.collection("apt_monthly_aggregate_groups");
+
+const normalizeGroupKey = (value: string): string => value.replaceAll("|", " ").trim();
+
+const makeTradeGroupId = (record: TradeRecord): string => {
+  const ym = record.tradedAt.slice(0, 7).replace("-", "");
+  const groupKey = `${normalizeGroupKey(record.legalDong)}|${normalizeGroupKey(record.apartmentName)}`;
+  return `${record.region}|${record.districtCode}|${ym}|${groupKey}`;
+};
 
 export const upsertTrades = async (records: TradeRecord[]): Promise<void> => {
   if (records.length === 0) return;
 
-  const batch = firestore.batch();
+  const bucket = new Map<string, TradeRecord[]>();
 
   for (const record of records) {
-    const ref = tradesCollection.doc(record.id);
-    batch.set(ref, record, { merge: true });
+    const groupId = makeTradeGroupId(record);
+    const list = bucket.get(groupId) ?? [];
+    list.push(record);
+    bucket.set(groupId, list);
+  }
+
+  const batch = firestore.batch();
+
+  for (const [id, trades] of bucket.entries()) {
+    const first = trades[0];
+    const sortedByDate = [...trades].sort((a, b) => b.tradedAt.localeCompare(a.tradedAt));
+    const doc: TradeGroupDocument = {
+      id,
+      region: first.region,
+      districtCode: first.districtCode,
+      yearMonth: first.tradedAt.slice(0, 7).replace("-", ""),
+      groupKey: `${normalizeGroupKey(first.legalDong)}|${normalizeGroupKey(first.apartmentName)}`,
+      legalDong: first.legalDong,
+      apartmentName: first.apartmentName,
+      trades: sortedByDate,
+      txCount: trades.length,
+      lastTradedAt: sortedByDate[0]?.tradedAt ?? "",
+    };
+
+    batch.set(tradeGroupCollection.doc(id), doc, { merge: true });
   }
 
   await batch.commit();
@@ -59,11 +90,29 @@ export const makeMonthlyAggregates = (records: TradeRecord[]): MonthlyAggregate[
 export const upsertMonthlyAggregates = async (aggregates: MonthlyAggregate[]): Promise<void> => {
   if (aggregates.length === 0) return;
 
-  const batch = firestore.batch();
+  const bucket = new Map<string, MonthlyAggregate[]>();
 
   for (const item of aggregates) {
-    const id = `${item.region}|${item.districtCode}|${item.apartmentName}|${item.yearMonth}`;
-    batch.set(monthlyCollection.doc(id), item, { merge: true });
+    const id = `${item.region}|${item.districtCode}|${item.yearMonth}`;
+    const list = bucket.get(id) ?? [];
+    list.push(item);
+    bucket.set(id, list);
+  }
+
+  const batch = firestore.batch();
+
+  for (const [id, items] of bucket.entries()) {
+    const first = items[0];
+    const doc: MonthlyAggregateGroupDocument = {
+      id,
+      region: first.region,
+      districtCode: first.districtCode,
+      yearMonth: first.yearMonth,
+      items,
+      totalTxCount: items.reduce((acc, item) => acc + item.txCount, 0),
+    };
+
+    batch.set(monthlyGroupCollection.doc(id), doc, { merge: true });
   }
 
   await batch.commit();

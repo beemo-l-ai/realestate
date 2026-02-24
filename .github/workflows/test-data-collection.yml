@@ -25,6 +25,10 @@ jobs:
     timeout-minutes: 30
     env:
       PROD_SECRET: ${{ secrets.PROD_SECRET }}
+      FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+      FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+      FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
+      MOLIT_SERVICE_KEY: ${{ secrets.MOLIT_SERVICE_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,36 +37,46 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ -z "${PROD_SECRET:-}" ]; then
-            echo "::error::Missing secret: PROD_SECRET"
-            echo "::error::Set this under Settings > Secrets and variables > Actions."
-            exit 1
-          fi
-
           declare -A parsed
-          while IFS= read -r line || [ -n "$line" ]; do
-            line="${line%$'\r'}"
-            [ -z "$line" ] && continue
-            [[ "$line" =~ ^[[:space:]]*# ]] && continue
+          if [ -n "${PROD_SECRET:-}" ]; then
+            while IFS= read -r line || [ -n "$line" ]; do
+              line="${line%$'\r'}"
+              line="${line#"${line%%[![:space:]]*}"}"
+              [ -z "$line" ] && continue
+              [[ "$line" =~ ^# ]] && continue
 
-            if [[ "$line" != *=* ]]; then
-              echo "::warning::Skipping invalid PROD_SECRET line (expected key=value)."
-              continue
-            fi
+              # Allow both `key=value` and `export key=value` (with optional leading spaces).
+              line="${line#export }"
 
-            key="${line%%=*}"
-            value="${line#*=}"
-            key="${key#"${key%%[![:space:]]*}"}"
-            key="${key%"${key##*[![:space:]]}"}"
-            parsed["$key"]="$value"
-          done <<< "$PROD_SECRET"
+              if [[ "$line" != *=* ]]; then
+                echo "::warning::Skipping invalid PROD_SECRET line (expected key=value)."
+                continue
+              fi
+
+              key="${line%%=*}"
+              value="${line#*=}"
+              key="${key#"${key%%[![:space:]]*}"}"
+              key="${key%"${key##*[![:space:]]}"}"
+
+              # Strip optional wrapping quotes from values in pasted .env blocks.
+              if [[ "$value" =~ ^\".*\"$ ]]; then
+                value="${value:1:${#value}-2}"
+              elif [[ "$value" =~ ^\'.*\'$ ]]; then
+                value="${value:1:${#value}-2}"
+              fi
+
+              parsed["$key"]="$value"
+            done <<< "$PROD_SECRET"
+          else
+            echo "::warning::PROD_SECRET is not set. Falling back to individual GitHub secrets."
+          fi
 
           required=(FIREBASE_PROJECT_ID FIREBASE_CLIENT_EMAIL FIREBASE_PRIVATE_KEY MOLIT_SERVICE_KEY)
           for key in "${required[@]}"; do
-            value="${parsed[$key]:-}"
+            value="${parsed[$key]:-${!key:-}}"
             if [ -z "$value" ]; then
               echo "::error::Missing secret: $key"
-              echo "::error::Set this in PROD_SECRET as '$key=...'."
+              echo "::error::Set this in PROD_SECRET as '$key=...' or create a '$key' Actions secret."
               exit 1
             fi
 

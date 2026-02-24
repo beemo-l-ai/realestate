@@ -5,9 +5,12 @@
 
 ## 핵심 파일
 - `collectAndStore.ts`: 월 범위 계산, 지역 반복 수집, 저장 실행
+- `collectByDate.ts`: 날짜(`YYYY-MM-DD`) 기반 수집(초기 전체/증분 크론 대응)
 
 ## 입력/출력
-- 입력: CLI `startYm`, `endYm`
+- 입력: CLI
+  - `collectAndStore.ts`: `startYm`, `endYm`
+  - `collectByDate.ts`: `--mode`, `--from`, `--to?`
 - 출력: 콘솔 운영 로그 + Firestore upsert
 
 ## 이 디렉토리만 수정하면 되는 경우

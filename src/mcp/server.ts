@@ -1,21 +1,16 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { firestore } from "../lib/firebase.js";
 
-const server = new Server(
-  {
-    name: "kr-realestate-mcp",
-    version: "0.1.0",
-  },
-  {
-    capabilities: {
-      tools: {},
-    },
-  },
-);
+const server = new McpServer({
+  name: "kr-realestate-mcp",
+  version: "0.1.0",
+});
 
-const searchSchema = {
+const wonToEok = (amount: number): string => `${(amount / 100_000_000).toFixed(2)}억`;
+
+const searchInputSchema = {
   region: z.enum(["서울", "경기", "인천"]).optional(),
   districtCode: z.string().optional(),
   apartmentName: z.string().optional(),
@@ -23,12 +18,13 @@ const searchSchema = {
   toYm: z.string().regex(/^\d{6}$/),
 };
 
-const wonToEok = (amount: number): string => `${(amount / 100_000_000).toFixed(2)}억`;
-
-server.tool(
+server.registerTool(
   "search_realestate_trends",
-  "수도권(서울/경기/인천) 아파트 월별 실거래가 통계를 조회하고 간단한 추세 시각화를 제공합니다.",
-  searchSchema,
+  {
+    title: "수도권 실거래가 추이 조회",
+    description: "수도권(서울/경기/인천) 아파트 월별 실거래가 통계를 조회하고 간단한 추세 시각화를 제공합니다.",
+    inputSchema: searchInputSchema,
+  },
   async (input) => {
     let query = firestore.collection("apt_monthly_aggregates")
       .where("yearMonth", ">=", input.fromYm)
@@ -55,7 +51,7 @@ server.tool(
       return {
         content: [
           {
-            type: "text",
+            type: "text" as const,
             text: "조건에 맞는 수도권 실거래가 집계 데이터가 없습니다.",
           },
         ],
@@ -78,7 +74,7 @@ server.tool(
     return {
       content: [
         {
-          type: "text",
+          type: "text" as const,
           text: [
             "[수도권 실거래가 조회 결과]",
             summary,
@@ -98,14 +94,17 @@ server.tool(
   },
 );
 
-server.tool(
+server.registerTool(
   "get_latest_transaction_examples",
-  "조건에 맞는 최근 실거래 개별 사례를 조회합니다(수도권 한정).",
   {
-    region: z.enum(["서울", "경기", "인천"]).optional(),
-    districtCode: z.string().optional(),
-    apartmentName: z.string().optional(),
-    limit: z.number().min(1).max(30).default(10),
+    title: "수도권 최신 거래 사례 조회",
+    description: "조건에 맞는 최근 실거래 개별 사례를 조회합니다(수도권 한정).",
+    inputSchema: {
+      region: z.enum(["서울", "경기", "인천"]).optional(),
+      districtCode: z.string().optional(),
+      apartmentName: z.string().optional(),
+      limit: z.number().int().min(1).max(30).default(10),
+    },
   },
   async (input) => {
     let query = firestore.collection("apt_transactions").orderBy("tradedAt", "desc").limit(input.limit);
@@ -120,7 +119,7 @@ server.tool(
     return {
       content: [
         {
-          type: "text",
+          type: "text" as const,
           text: rows.length
             ? rows
                 .map(

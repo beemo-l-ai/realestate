@@ -24,23 +24,58 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
-      FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
-      FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
-      MOLIT_SERVICE_KEY: ${{ secrets.MOLIT_SERVICE_KEY }}
+      PROD_SECRET: ${{ secrets.PROD_SECRET }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate secrets
+      - name: Load and validate secrets
         run: |
+          set -euo pipefail
+
+          if [ -z "${PROD_SECRET:-}" ]; then
+            echo "::error::Missing secret: PROD_SECRET"
+            echo "::error::Set this under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+          declare -A parsed
+          while IFS= read -r line || [ -n "$line" ]; do
+            line="${line%$'\r'}"
+            [ -z "$line" ] && continue
+            [[ "$line" =~ ^[[:space:]]*# ]] && continue
+
+            if [[ "$line" != *=* ]]; then
+              echo "::warning::Skipping invalid PROD_SECRET line (expected key=value)."
+              continue
+            fi
+
+            key="${line%%=*}"
+            value="${line#*=}"
+            key="${key#"${key%%[![:space:]]*}"}"
+            key="${key%"${key##*[![:space:]]}"}"
+            parsed["$key"]="$value"
+          done <<< "$PROD_SECRET"
+
           required=(FIREBASE_PROJECT_ID FIREBASE_CLIENT_EMAIL FIREBASE_PRIVATE_KEY MOLIT_SERVICE_KEY)
           for key in "${required[@]}"; do
-            if [ -z "${!key}" ]; then
+            value="${parsed[$key]:-}"
+            if [ -z "$value" ]; then
               echo "::error::Missing secret: $key"
-              echo "::error::Set this under Settings > Secrets and variables > Actions."
+              echo "::error::Set this in PROD_SECRET as '$key=...'."
               exit 1
             fi
+
+            if [ "$key" = "FIREBASE_PRIVATE_KEY" ]; then
+              value="${value//\\n/$'\n'}"
+            fi
+
+            echo "::add-mask::$value"
+            {
+              echo "$key<<EOF"
+              echo "$value"
+              echo "EOF"
+            } >> "$GITHUB_ENV"
           done
 
       - name: Setup Node.js

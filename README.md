@@ -133,14 +133,18 @@ npm run dev:mcp
 ```
 
 
-### 4.5 Apps SDK 최소 템플릿 실행
+### 4.5 Apps SDK 최소 템플릿 실행 (로컬 테스트)
 
 ```bash
 npm run dev:apps
 ```
 
 - 파일: `src/apps/quickstart/server.ts`
-- 포함 내용: `openai/outputTemplate` 메타데이터, 위젯 HTML 리소스(`ui://...`), 수도권 월별 추이 조회 도구
+- 로컬 MCP 엔드포인트: `http://localhost:8787/mcp` (PORT로 변경 가능)
+- 포함 내용: Apps SDK quickstart 스타일 리소스/도구 등록, 위젯 HTML 리소스(`ui://...`), 수도권 월별 추이 조회 도구
+
+자세한 로컬 테스트(터널 포함) 방법은 아래 문서 참고:
+- `docs/APPS_SDK_LOCAL_TEST.md`
 
 
 ### 4.6 GitHub Actions로 수집 테스트

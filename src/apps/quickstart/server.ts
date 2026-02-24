@@ -1,70 +1,36 @@
+import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
+import crypto from "node:crypto";
+import {
+  registerAppResource,
+  registerAppTool,
+  RESOURCE_MIME_TYPE,
+} from "@modelcontextprotocol/ext-apps/server";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 import { firestore } from "../../lib/firebase.js";
 
 const UI_TEMPLATE_URI = "ui://realestate/trend-widget.html";
+const widgetHtml = readFileSync(new URL("../../../public/trend-widget.html", import.meta.url), "utf8");
 
 const server = new McpServer({
   name: "kr-realestate-apps-template",
   version: "0.1.0",
 });
 
-server.registerResource(
-  "trend-widget",
-  UI_TEMPLATE_URI,
-  {
-    title: "수도권 실거래가 위젯",
-    description: "월별 평균 실거래가를 간단한 표로 렌더링하는 위젯 템플릿",
-    mimeType: "text/html",
-  },
-  async () => ({
-    contents: [
-      {
-        uri: UI_TEMPLATE_URI,
-        mimeType: "text/html",
-        text: `
-<!doctype html>
-<html lang="ko">
-  <head>
-    <meta charset="utf-8" />
-    <title>수도권 실거래가 위젯</title>
-    <style>
-      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 16px; }
-      table { border-collapse: collapse; width: 100%; }
-      th, td { border: 1px solid #ddd; padding: 8px; font-size: 13px; }
-      th { background: #fafafa; text-align: left; }
-      .muted { color: #666; font-size: 12px; margin-top: 8px; }
-    </style>
-  </head>
-  <body>
-    <h3>수도권 실거래가 추이</h3>
-    <div id="app">데이터를 불러오는 중...</div>
-    <script>
-      const root = document.getElementById("app");
-      const payload = window?.openai?.toolOutput?.structuredContent;
-      const rows = payload?.rows ?? [];
+registerAppResource(server, "trend-widget", UI_TEMPLATE_URI, {}, async () => ({
+  contents: [
+    {
+      uri: UI_TEMPLATE_URI,
+      mimeType: RESOURCE_MIME_TYPE,
+      text: widgetHtml,
+    },
+  ],
+}));
 
-      if (!rows.length) {
-        root.textContent = "표시할 데이터가 없습니다.";
-      } else {
-        const table = document.createElement("table");
-        const bodyRows = rows
-          .map((r) => "<tr><td>" + r.yearMonth + "</td><td>" + r.region + "</td><td>" + r.apartmentName + "</td><td>" + r.avgPriceKrw + "</td><td>" + r.txCount + "</td></tr>")
-          .join("");
-        table.innerHTML = "<thead><tr><th>년월</th><th>지역</th><th>아파트</th><th>평균가(원)</th><th>거래건수</th></tr></thead><tbody>" + bodyRows + "</tbody>";
-        root.innerHTML = "";
-        root.appendChild(table);
-      }
-    </script>
-  </body>
-</html>`,
-      },
-    ],
-  }),
-);
-
-server.registerTool(
+registerAppTool(
+  server,
   "get_capital_region_monthly_trends",
   {
     title: "수도권 월별 실거래가 추이 조회",
@@ -87,6 +53,9 @@ server.registerTool(
       ),
     },
     _meta: {
+      // Apps SDK quickstart 스타일: 도구 결과를 이 UI 리소스로 렌더링
+      ui: { resourceUri: UI_TEMPLATE_URI },
+      // (레거시/호환) ChatGPT Apps의 outputTemplate 메타데이터도 함께 둠
       "openai/outputTemplate": UI_TEMPLATE_URI,
     },
   },
@@ -130,12 +99,46 @@ server.registerTool(
   },
 );
 
-const main = async (): Promise<void> => {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-};
+const MCP_PATH = "/mcp";
+const port = Number(process.env.PORT ?? 8787);
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
+const httpServer = createServer(async (req, res) => {
+  if (!req.url) {
+    res.writeHead(400).end("Missing URL");
+    return;
+  }
+
+  const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
+
+  // CORS preflight for browser-based / ChatGPT host calls
+  if (req.method === "OPTIONS" && url.pathname === MCP_PATH) {
+    res.writeHead(204, {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+      "Access-Control-Allow-Headers": "content-type, mcp-session-id",
+      "Access-Control-Expose-Headers": "Mcp-Session-Id",
+    });
+    res.end();
+    return;
+  }
+
+  if (url.pathname !== MCP_PATH) {
+    res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+    res.end("Not found");
+    return;
+  }
+
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: () => crypto.randomUUID(),
+  });
+
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
+
+  await server.connect(transport);
+  await transport.handleRequest(req, res);
+});
+
+httpServer.listen(port, () => {
+  console.log(`[apps] MCP server listening: http://localhost:${port}${MCP_PATH}`);
 });

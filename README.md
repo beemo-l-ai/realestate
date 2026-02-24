@@ -1,28 +1,204 @@
-# Real Estate Apps SDK 최소 템플릿
+# 수도권 부동산 실거래가 MCP 서버 (ChatGPT Apps 연동 준비)
 
-OpenAI Apps SDK quickstart 흐름을 참고한 **최소 골격**입니다.
+이 저장소는 **ChatGPT Apps(https://chatgpt.com/apps)에서 사용할 수 있는 형태**를 목표로,
+아래 3가지를 한 번에 제공합니다.
 
-## 포함 내용
-- MCP 서버 (`/mcp`) + 헬스체크 (`/health`)
-- 샘플 툴 `search_listings`
-- 샘플 UI 리소스 `ui://widget/listings.html`
+1. 데이터 수집: 국토부 실거래가(아파트) API 수집
+2. 데이터 저장: Firebase Firestore 적재 + 월별 집계
+3. MCP 서버: GPT가 질의할 수 있는 도구(`search_realestate_trends`, `get_latest_transaction_examples`) 제공
+4. Apps SDK 템플릿: ChatGPT Apps quickstart 스타일의 최소 서버 골격 제공
 
-## 실행
-```bash
-npm install
-npm run dev
+> 범위: 한국 부동산 중 **수도권(서울/경기/인천)**
+
+---
+
+## 1) ChatGPT Apps 관점에서의 구현 검토
+
+실무적으로는 UI부터 만들기보다, ChatGPT가 신뢰 가능한 데이터를 조회하도록 **MCP 서버를 먼저 구축**하는 방식이 빠르고 안정적입니다.
+
+- ChatGPT가 자연어 질의 수신
+- MCP tool 호출
+- Firestore 집계/거래 데이터 조회
+- 결과를 텍스트/구조화 데이터로 반환
+
+즉, 이 저장소는 ChatGPT Apps에서 확장 가능한 **백엔드(툴 서버) 코어**입니다.
+
+---
+
+## 2) 아키텍처
+
+```text
+[국토부 실거래가 API]
+        |
+        v
+ collectAndStore.ts (월별/지역별 수집)
+        |
+        v
+[Firestore]
+  - apt_transactions
+  - apt_monthly_aggregates
+        |
+        v
+ MCP Server (src/mcp/server.ts)
+  - search_realestate_trends
+  - get_latest_transaction_examples
+        |
+        v
+ ChatGPT Apps / GPT Tool Calling
 ```
 
-기본 포트는 `3000`이며, 엔드포인트는 다음과 같습니다.
-- MCP: `http://localhost:3000/mcp`
-- Health: `http://localhost:3000/health`
+---
 
-## Apps 등록 시 체크리스트
-1. 공개 URL로 배포 후 `/mcp`를 외부에서 접근 가능하게 구성
-2. 인증(OAuth/API key) 정책 추가
-3. 실제 DB/검색 API 연동으로 `search_listings` 구현 교체
-4. `openai/outputTemplate`에 연결된 위젯 HTML 보안 점검
+## 3) 대규모 업데이트 대응 구조
 
-## 참고
-- 현재 코드는 **샘플 데이터 기반 템플릿**입니다.
-- Apps SDK 문서 버전에 따라 transport/메타 키가 변경될 수 있어 최신 문서와 함께 검증하세요.
+기능 수정 시 전체 파일을 읽지 않고, 관련 디렉토리만 보고 판단할 수 있도록 구조 문서를 추가했습니다.
+
+- 레포 구조/탐색 순서: `docs/REPO_STRUCTURE.md`
+- 코드/개발 규칙: `docs/DEVELOPMENT_RULES.md`
+- 디렉토리별 요약:
+  - `src/README.md`
+  - `src/apps/README.md`
+  - `src/mcp/README.md`
+  - `src/collector/README.md`
+  - `src/lib/README.md`
+  - `src/scripts/README.md`
+
+신규 디렉토리를 만들 때도 동일하게 README를 추가해 탐색 비용을 낮추는 것을 기본 규칙으로 합니다.
+
+---
+
+## 4) 빠른 시작
+
+### 4.1 환경 변수
+
+`.env.example`를 `.env`로 복사한 뒤 값을 채웁니다.
+
+```bash
+cp .env.example .env
+```
+
+필수:
+- `FIREBASE_PROJECT_ID`
+- `FIREBASE_CLIENT_EMAIL`
+- `FIREBASE_PRIVATE_KEY`
+- `MOLIT_SERVICE_KEY`
+
+### 4.2 설치/빌드
+
+```bash
+npm install
+npm run check
+npm run build
+```
+
+### 4.3 데이터 수집/적재
+
+단일 월:
+
+```bash
+npm run collect -- 202401
+```
+
+기간:
+
+```bash
+npm run collect -- 202401 202412
+```
+
+### 4.4 MCP 서버 실행
+
+```bash
+npm run start:mcp
+```
+
+(개발 모드)
+
+```bash
+npm run dev:mcp
+```
+
+
+### 4.5 Apps SDK 최소 템플릿 실행
+
+```bash
+npm run dev:apps
+```
+
+- 파일: `src/apps/quickstart/server.ts`
+- 포함 내용: `openai/outputTemplate` 메타데이터, 위젯 HTML 리소스(`ui://...`), 수도권 월별 추이 조회 도구
+
+---
+
+## 5) Firestore 스키마
+
+### apt_transactions
+- `id`: 거래 고유 ID
+- `region`: 서울/경기/인천
+- `districtCode`: 법정동 코드
+- `legalDong`: 법정동
+- `apartmentName`: 아파트명
+- `areaM2`: 전용면적
+- `priceKrw`: 원화 가격
+- `floor`: 층
+- `tradedAt`: YYYY-MM-DD
+- `source`: MOLIT_RTMS
+- `collectedAt`: 수집 시각
+
+### apt_monthly_aggregates
+- `region`
+- `districtCode`
+- `apartmentName`
+- `yearMonth`: YYYYMM
+- `avgPriceKrw`
+- `medianPriceKrw`
+- `minPriceKrw`
+- `maxPriceKrw`
+- `txCount`
+
+---
+
+## 6) MCP 도구 명세
+
+### `search_realestate_trends`
+입력:
+- `region?`: 서울 | 경기 | 인천
+- `districtCode?`
+- `apartmentName?`
+- `fromYm`: YYYYMM
+- `toYm`: YYYYMM
+
+출력:
+- 월별 평균가 요약
+- 텍스트 기반 시각화(막대)
+- `structuredContent`에 원본 집계 결과 포함
+
+### `get_latest_transaction_examples`
+입력:
+- `region?`
+- `districtCode?`
+- `apartmentName?`
+- `limit` (1~30, 기본 10)
+
+출력:
+- 최신 거래 사례 목록
+- `structuredContent.rows`
+
+---
+
+## 7) ChatGPT Apps 연동 팁
+
+실제 배포 시에는 MCP 서버를 네트워크에서 접근 가능한 형태(예: Cloud Run)로 띄우고,
+ChatGPT Apps 설정에서 해당 서버를 툴 공급자로 연결합니다.
+
+권장 추가 작업:
+- Firestore composite index 사전 생성
+- 지역명/법정동명 alias 사전 추가(질의 정확도 향상)
+- 월별 집계 외 평당가, 면적 구간별 지표 추가
+- RAG용 설명 문서(세금/대출 규정) 컬렉션 분리
+
+---
+
+## 8) 주의사항
+
+- 국토부 API는 호출량/응답 포맷 제약이 있으므로 배치 수집을 권장합니다.
+- MCP 응답은 사실 기반 데이터만 반환하도록 강제하고, 예측성 문구는 명시적으로 분리하세요.

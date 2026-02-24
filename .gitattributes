@@ -1,0 +1,5 @@
+# Reduce frequent documentation merge conflicts by preferring line-wise union merges.
+*.md merge=union
+
+# Keep generated artifacts deterministic.
+package-lock.json -text

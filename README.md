@@ -105,6 +105,17 @@ npm run collect -- 202401
 npm run collect -- 202401 202412
 ```
 
+
+날짜 기반(권장, 크론잡 용도):
+
+```bash
+# 초기 1회 전체 수집 (예: 2024년 전체)
+npm run collect:date -- --mode bootstrap --from 2024-01-01 --to 2024-12-31
+
+# 증분 수집 (월 1회 크론: 해당 월만)
+npm run collect:date -- --mode incremental --from 2025-01-01
+```
+
 ### 4.4 MCP 서버 실행
 
 ```bash

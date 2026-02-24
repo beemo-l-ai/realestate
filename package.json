@@ -8,6 +8,7 @@
     "check": "tsc --noEmit",
     "start:mcp": "node --enable-source-maps dist/mcp/server.js",
     "collect": "tsx src/scripts/collectAndStore.ts",
+    "collect:date": "tsx src/scripts/collectByDate.ts",
     "dev:mcp": "tsx src/mcp/server.ts",
     "start:apps": "node --enable-source-maps dist/apps/quickstart/server.js",
     "dev:apps": "tsx src/apps/quickstart/server.ts",

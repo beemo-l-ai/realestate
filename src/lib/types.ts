@@ -36,3 +36,15 @@ export interface MonthlyAggregate {
   maxPriceKrw: number;
   txCount: number;
 }
+
+export interface ApartmentMetadata {
+  id: string; // "region|districtCode|apartmentName"
+  region: string;
+  districtCode: string;
+  legalDong: string;
+  apartmentName: string;
+  availableAreas: number[];
+  totalTrades: number;
+  lastTradeAt: string;
+}
+

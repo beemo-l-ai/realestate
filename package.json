@@ -12,7 +12,8 @@
     "dev:mcp": "tsx src/mcp/server.ts",
     "start:apps": "node --enable-source-maps dist/apps/quickstart/server.js",
     "dev:apps": "tsx src/apps/quickstart/server.ts",
-    "resolve:main-conflicts": "tsx src/scripts/resolveMainConflicts.ts"
+    "resolve:main-conflicts": "tsx src/scripts/resolveMainConflicts.ts",
+    "dev:chatgpt": "concurrently \"node src/server.js\" \"node src/scripts/startNgrok.js\""
   },
   "dependencies": {
     "@google-cloud/firestore": "^7.11.2",
@@ -23,7 +24,9 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.1",
-    "tsx": "^4.19.2",
+    "concurrently": "^9.2.1",
+    "nodemon": "^3.1.14",
+    "tsx": "^4.21.0",
     "typescript": "^5.7.2"
   }
 }

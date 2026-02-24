@@ -110,12 +110,22 @@ export const collectTradesByMonth = async (
   url.searchParams.set("DEAL_YMD", yearMonth);
   url.searchParams.set("numOfRows", "999");
 
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      Accept: "application/xml",
-    },
-  });
+  const controller = new AbortController();
+  const response = (await Promise.race([
+    fetch(url, {
+      method: "GET",
+      headers: {
+        Accept: "application/xml",
+      },
+      signal: controller.signal,
+    }),
+    new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        controller.abort();
+        reject(new Error(`MOLIT API request timed out: district=${districtCode}, ym=${yearMonth}`));
+      }, 20_000);
+    }),
+  ])) as Response;
 
   if (!response.ok) {
     throw new Error(`MOLIT API request failed: ${response.status} ${response.statusText}`);

@@ -18,7 +18,7 @@
 
 - ChatGPT가 자연어 질의 수신
 - MCP tool 호출
-- Firestore 집계/거래 데이터 조회
+- Firestore 그룹 집계/거래 데이터 조회
 - 결과를 텍스트/구조화 데이터로 반환
 
 즉, 이 저장소는 ChatGPT Apps에서 확장 가능한 **백엔드(툴 서버) 코어**입니다.
@@ -35,8 +35,8 @@
         |
         v
 [Firestore]
-  - apt_transactions
-  - apt_monthly_aggregates
+  - apt_transaction_groups
+  - apt_monthly_aggregate_groups
         |
         v
  MCP Server (src/mcp/server.ts)
@@ -133,14 +133,18 @@ npm run dev:mcp
 ```
 
 
-### 4.5 Apps SDK 최소 템플릿 실행
+### 4.5 Apps SDK 최소 템플릿 실행 (로컬 테스트)
 
 ```bash
 npm run dev:apps
 ```
 
 - 파일: `src/apps/quickstart/server.ts`
-- 포함 내용: `openai/outputTemplate` 메타데이터, 위젯 HTML 리소스(`ui://...`), 수도권 월별 추이 조회 도구
+- 로컬 MCP 엔드포인트: `http://localhost:8787/mcp` (PORT로 변경 가능)
+- 포함 내용: Apps SDK quickstart 스타일 리소스/도구 등록, 위젯 HTML 리소스(`ui://...`), 수도권 월별 추이 조회 도구
+
+자세한 로컬 테스트(터널 포함) 방법은 아래 문서 참고:
+- `docs/APPS_SDK_LOCAL_TEST.md`
 
 
 ### 4.6 GitHub Actions로 수집 테스트
@@ -164,29 +168,25 @@ npm run dev:apps
 
 ## 5) Firestore 스키마
 
-### apt_transactions
-- `id`: 거래 고유 ID
+### apt_transaction_groups
+- `id`: 그룹 문서 ID (`region|districtCode|yearMonth|legalDong|apartmentName`)
 - `region`: 서울/경기/인천
 - `districtCode`: 법정동 코드
+- `yearMonth`: YYYYMM
+- `groupKey`: `legalDong|apartmentName`
 - `legalDong`: 법정동
 - `apartmentName`: 아파트명
-- `areaM2`: 전용면적
-- `priceKrw`: 원화 가격
-- `floor`: 층
-- `tradedAt`: YYYY-MM-DD
-- `source`: MOLIT_RTMS
-- `collectedAt`: 수집 시각
+- `trades`: 동일 단지/주소 그룹의 거래 배열
+- `txCount`: 그룹 거래 건수
+- `lastTradedAt`: 그룹 내 최신 거래일
 
-### apt_monthly_aggregates
+### apt_monthly_aggregate_groups
+- `id`: 그룹 문서 ID (`region|districtCode|yearMonth`)
 - `region`
 - `districtCode`
-- `apartmentName`
 - `yearMonth`: YYYYMM
-- `avgPriceKrw`
-- `medianPriceKrw`
-- `minPriceKrw`
-- `maxPriceKrw`
-- `txCount`
+- `items`: 단지별 월 집계 배열 (`apartmentName`, `avgPriceKrw`, `txCount` 등 포함)
+- `totalTxCount`: 문서 전체 거래 건수
 
 ---
 

@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>수도권 실거래가 위젯</title>
+    <style>
+      :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #0b0b0f; }
+      body { margin: 0; padding: 16px; background: #f6f8fb; }
+      main { max-width: 720px; margin: 0 auto; background: #fff; border-radius: 16px; padding: 16px; box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08); }
+      h3 { margin: 0 0 12px; }
+      table { border-collapse: collapse; width: 100%; }
+      th, td { border: 1px solid #e5e7eb; padding: 8px; font-size: 13px; }
+      th { background: #fafafa; text-align: left; }
+      .muted { color: #6b7280; font-size: 12px; margin-top: 8px; }
+      .empty { color: #6b7280; padding: 12px 0; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h3>수도권 실거래가 추이</h3>
+      <div id="app" class="empty">데이터를 불러오는 중...</div>
+      <div class="muted">도구 실행 결과의 structuredContent.rows 를 표로 렌더링합니다.</div>
+    </main>
+
+    <script type="module">
+      const root = document.getElementById('app');
+
+      const renderRows = (rows) => {
+        if (!Array.isArray(rows) || rows.length === 0) {
+          root.className = 'empty';
+          root.textContent = '표시할 데이터가 없습니다.';
+          return;
+        }
+
+        const table = document.createElement('table');
+        const bodyRows = rows
+          .map((r) => `\n<tr>` +
+            `<td>${escapeHtml(r.yearMonth ?? '')}</td>` +
+            `<td>${escapeHtml(r.region ?? '')}</td>` +
+            `<td>${escapeHtml(r.apartmentName ?? '')}</td>` +
+            `<td>${formatNumber(r.avgPriceKrw)}</td>` +
+            `<td>${formatNumber(r.txCount)}</td>` +
+          `</tr>`)
+          .join('');
+
+        table.innerHTML = `\n<thead><tr><th>년월</th><th>지역</th><th>아파트</th><th>평균가(원)</th><th>거래건수</th></tr></thead>` +
+          `\n<tbody>${bodyRows}</tbody>`;
+
+        root.className = '';
+        root.innerHTML = '';
+        root.appendChild(table);
+      };
+
+      const escapeHtml = (value) => String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+
+      const formatNumber = (value) => {
+        const n = Number(value);
+        if (!Number.isFinite(n)) return '';
+        return n.toLocaleString('ko-KR');
+      };
+
+      // 1) Legacy: ChatGPT Apps compatibility surface
+      try {
+        const payload = window?.openai?.toolOutput?.structuredContent;
+        if (payload?.rows) {
+          renderRows(payload.rows);
+        }
+      } catch {}
+
+      // 2) MCP Apps bridge notifications (ui/notifications/tool-result)
+      window.addEventListener('message', (event) => {
+        if (event.source !== window.parent) return;
+        const message = event.data;
+        if (!message || message.jsonrpc !== '2.0') return;
+        if (message.method === 'ui/notifications/tool-result') {
+          const rows = message.params?.structuredContent?.rows;
+          if (rows) renderRows(rows);
+        }
+      }, { passive: true });
+
+      // Initialize bridge (best-effort)
+      let rpcId = 0;
+      const pending = new Map();
+      const rpcRequest = (method, params) => new Promise((resolve, reject) => {
+        const id = ++rpcId;
+        pending.set(id, { resolve, reject });
+        window.parent.postMessage({ jsonrpc: '2.0', id, method, params }, '*');
+      });
+      const rpcNotify = (method, params) => {
+        window.parent.postMessage({ jsonrpc: '2.0', method, params }, '*');
+      };
+
+      window.addEventListener('message', (event) => {
+        if (event.source !== window.parent) return;
+        const message = event.data;
+        if (!message || message.jsonrpc !== '2.0') return;
+        if (typeof message.id === 'number') {
+          const p = pending.get(message.id);
+          if (!p) return;
+          pending.delete(message.id);
+          if (message.error) p.reject(message.error);
+          else p.resolve(message.result);
+        }
+      }, { passive: true });
+
+      try {
+        await rpcRequest('ui/initialize', {
+          appInfo: { name: 'realestate-trend-widget', version: '0.1.0' },
+          appCapabilities: {},
+          protocolVersion: '2026-01-26',
+        });
+        rpcNotify('ui/notifications/initialized', {});
+      } catch {
+        // ignore
+      }
+    </script>
+  </body>
+</html>

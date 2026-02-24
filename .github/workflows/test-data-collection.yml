@@ -84,6 +84,21 @@ jobs:
               key="${key#"${key%%[![:space:]]*}"}"
               key="${key%"${key##*[![:space:]]}"}"
 
+              # Tolerate accidental wrapping characters when PROD_SECRET is pasted from
+              # array-like snippets (e.g. [KEY=value]).
+              key="${key#[}"
+              key="${key%]}"
+              key="${key#\"}"
+              key="${key%\"}"
+              key="${key#\'}"
+              key="${key%\'}"
+
+              if [[ ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+                ((skipped_count+=1))
+                echo "::warning::Skipping PROD_SECRET line ${line_number} due to invalid key '$key'."
+                continue
+              fi
+
               # Strip optional wrapping quotes from values in pasted .env blocks.
               if [[ "$value" =~ ^\".*\"$ ]]; then
                 value="${value:1:${#value}-2}"

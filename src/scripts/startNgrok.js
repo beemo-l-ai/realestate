@@ -31,7 +31,7 @@ const startNgrok = () => {
                     console.log(`🎉 ngrok tunnel is live!`);
                     console.log(`🔗 Public URL: ${httpsTunnel.public_url}`);
                     console.log(`👉 Use this URL in the ChatGPT Apps Developer Portal:`);
-                    console.log(`   ${httpsTunnel.public_url}/sse`);
+                    console.log(`   ${httpsTunnel.public_url}/mcp`);
                     console.log(`========================================================\n`);
                     return;
                 }

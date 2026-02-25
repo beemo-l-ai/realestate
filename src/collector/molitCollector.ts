@@ -1,6 +1,6 @@
 import { XMLParser } from "fast-xml-parser";
 import { config } from "../lib/config.js";
-import { RawTradeRow, TradeRecord } from "../lib/types.js";
+import { RawTradeRow, RawRentRow, TradeRecord, RentRecord } from "../lib/types.js";
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -81,6 +81,53 @@ const makeTradeId = (row: RawTradeRow, districtCode: string): string => {
     .replaceAll(" ", "");
 };
 
+const normalizeRentRow = (row: Record<string, unknown>): RawRentRow | null => {
+  const legalDong = pickValue(row, ["법정동", "umdNm"]);
+  const apartment = pickValue(row, ["아파트", "aptNm"]);
+  const year = pickValue(row, ["년", "dealYear"]);
+  const month = pickValue(row, ["월", "dealMonth"]);
+  const day = pickValue(row, ["일", "dealDay"]);
+  const area = pickValue(row, ["전용면적", "excluUseAr"]);
+  const deposit = pickValue(row, ["보증금액", "deposit"]);
+  const monthlyRent = pickValue(row, ["월세금액", "monthlyRent"]);
+  const floor = pickValue(row, ["층", "floor"]);
+
+  if (!legalDong || !apartment || !year || !month || !day || !area || deposit === undefined || monthlyRent === undefined || !floor) {
+    return null;
+  }
+
+  return {
+    법정동: legalDong,
+    아파트: apartment,
+    년: year,
+    월: month,
+    일: day,
+    전용면적: area,
+    보증금액: deposit,
+    월세금액: monthlyRent,
+    층: floor,
+    지번: pickValue(row, ["지번", "jibun"]) ?? "",
+    지역코드: pickValue(row, ["지역코드", "지역코드값", "sggCd"]) ?? "",
+  };
+};
+
+const makeRentId = (row: RawRentRow, districtCode: string): string => {
+  return [
+    row.지역코드 || districtCode,
+    row.법정동,
+    row.아파트,
+    row.년,
+    pad2(row.월),
+    pad2(row.일),
+    row.전용면적,
+    row.층,
+    row.보증금액.replaceAll(",", ""),
+    row.월세금액.replaceAll(",", ""),
+  ]
+    .join("|")
+    .replaceAll(" ", "");
+};
+
 const parseRows = (xml: string): RawTradeRow[] => {
   const json = parser.parse(xml);
   const items = json.response?.body?.items?.item;
@@ -93,6 +140,20 @@ const parseRows = (xml: string): RawTradeRow[] => {
   return rows
     .map((row) => normalizeRow((row ?? {}) as Record<string, unknown>))
     .filter((row): row is RawTradeRow => row !== null);
+};
+
+const parseRentRows = (xml: string): RawRentRow[] => {
+  const json = parser.parse(xml);
+  const items = json.response?.body?.items?.item;
+
+  if (!items) {
+    return [];
+  }
+
+  const rows = Array.isArray(items) ? items : [items];
+  return rows
+    .map((row) => normalizeRentRow((row ?? {}) as Record<string, unknown>))
+    .filter((row): row is RawRentRow => row !== null);
 };
 
 export const collectTradesByMonth = async (
@@ -150,5 +211,68 @@ export const collectTradesByMonth = async (
       source: "MOLIT_RTMS",
       collectedAt: new Date().toISOString(),
     } satisfies TradeRecord;
+  });
+};
+
+export const collectRentByMonth = async (
+  districtCode: string,
+  yearMonth: string,
+  region: string,
+): Promise<RentRecord[]> => {
+  if (!config.molitServiceKey) {
+    throw new Error("MOLIT_SERVICE_KEY is required for live collection.");
+  }
+
+  const url = new URL(config.molitRentApiBase);
+  url.searchParams.set("serviceKey", normalizeServiceKey(config.molitServiceKey));
+  url.searchParams.set("LAWD_CD", districtCode);
+  url.searchParams.set("DEAL_YMD", yearMonth);
+  url.searchParams.set("numOfRows", "9999");
+
+  const controller = new AbortController();
+  const response = (await Promise.race([
+    fetch(url, {
+      method: "GET",
+      headers: {
+        Accept: "application/xml",
+      },
+      signal: controller.signal,
+    }),
+    new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        controller.abort();
+        reject(new Error(`MOLIT Rent API request timed out: district=${districtCode}, ym=${yearMonth}`));
+      }, 20_000);
+    }),
+  ])) as Response;
+
+  if (!response.ok) {
+    throw new Error(`MOLIT Rent API request failed: ${response.status} ${response.statusText}`);
+  }
+
+  const xml = await response.text();
+  const rows = parseRentRows(xml);
+
+  return rows.map((row) => {
+    const tradeDate = `${row.년}-${pad2(row.월)}-${pad2(row.일)}`;
+    const depositAmt = toNumber(row.보증금액);
+    const rentAmt = toNumber(row.월세금액);
+    const rentType = rentAmt > 0 ? "WOLSE" : "JEONSE";
+
+    return {
+      id: makeRentId(row, districtCode),
+      region,
+      districtCode,
+      legalDong: row.법정동,
+      apartmentName: row.아파트,
+      areaM2: Number(row.전용면적),
+      rentType,
+      depositKrw: depositAmt * 10_000,
+      monthlyRentKrw: rentAmt * 10_000,
+      floor: Number(row.층),
+      contractedAt: tradeDate,
+      source: "MOLIT_RTMS",
+      collectedAt: new Date().toISOString(),
+    } satisfies RentRecord;
   });
 };

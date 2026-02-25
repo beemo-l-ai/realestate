@@ -4,3 +4,4 @@ dist
 *.log
 
 .codex-changes/
+oracle-wallet/

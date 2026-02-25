@@ -1,6 +1,6 @@
-import { collectTradesByMonth } from "../collector/molitCollector.js";
+import { collectTradesByMonth, collectRentByMonth } from "../collector/molitCollector.js";
 import { seoulMetroDistricts } from "../lib/config.js";
-import { makeMonthlyAggregates, upsertMonthlyAggregates, upsertTrades, upsertApartmentMetadata } from "../lib/store.js";
+import { makeMonthlyAggregates, upsertMonthlyAggregates, upsertTrades, upsertApartmentMetadata, upsertRentTransactions, upsertMonthlyRentAggregates, makeMonthlyRentAggregates } from "../lib/store.js";
 
 type Mode = "bootstrap" | "incremental";
 
@@ -144,8 +144,34 @@ const main = async (): Promise<void> => {
           `upsertApartmentMetadata ${district.region}/${district.lawdCd}/${ym}`,
         );
         console.log(`[STEP] upsertMetadata:done ${district.region}/${district.lawdCd}/${ym}`);
+
+        console.log(`[STEP] fetch_rent:start ${district.region}/${district.lawdCd}/${ym}`);
+        const rents = await withTimeout(
+          collectRentByMonth(district.lawdCd, ym, district.region),
+          30_000,
+          `collectRentByMonth ${district.region}/${district.lawdCd}/${ym}`,
+        );
+        console.log(`[STEP] fetch_rent:done ${district.region}/${district.lawdCd}/${ym} rents=${rents.length}`);
+
+        console.log(`[STEP] upsertRent:start ${district.region}/${district.lawdCd}/${ym}`);
+        await withTimeout(
+          upsertRentTransactions(rents),
+          60_000,
+          `upsertRentTransactions ${district.region}/${district.lawdCd}/${ym}`,
+        );
+        console.log(`[STEP] upsertRent:done ${district.region}/${district.lawdCd}/${ym}`);
+
+        const rentAggregates = makeMonthlyRentAggregates(rents);
+        console.log(`[STEP] upsertMonthlyRent:start ${district.region}/${district.lawdCd}/${ym} aggregates=${rentAggregates.length}`);
+        await withTimeout(
+          upsertMonthlyRentAggregates(rentAggregates),
+          60_000,
+          `upsertMonthlyRentAggregates ${district.region}/${district.lawdCd}/${ym}`,
+        );
+        console.log(`[STEP] upsertMonthlyRent:done ${district.region}/${district.lawdCd}/${ym}`);
+
         console.log(
-          `[INGEST] mode=${cliArgs.mode} ${district.region}/${district.lawdCd}/${ym}: trades=${trades.length}, monthlyAgg=${aggregates.length}`,
+          `[INGEST] mode=${cliArgs.mode} ${district.region}/${district.lawdCd}/${ym}: trades=${trades.length}, monthlyAgg=${aggregates.length}, rents=${rents.length}, rentAgg=${rentAggregates.length}`,
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

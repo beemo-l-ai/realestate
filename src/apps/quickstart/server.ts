@@ -9,14 +9,14 @@ import {
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
-import { firestore } from "../../lib/firebase.js";
+import { searchSaleMonthlyTrends } from "../../lib/store.js";
 
 const UI_TEMPLATE_URI = "ui://realestate/trend-widget.html";
 const widgetHtml = readFileSync(new URL("../../../public/trend-widget.html", import.meta.url), "utf8");
 
 const server = new McpServer({
   name: "kr-realestate-apps-template",
-  version: "0.1.0",
+  version: "0.2.0",
 });
 
 registerAppResource(server, "trend-widget", UI_TEMPLATE_URI, {}, async () => ({
@@ -53,39 +53,27 @@ registerAppTool(
       ),
     },
     _meta: {
-      // Apps SDK quickstart 스타일: 도구 결과를 이 UI 리소스로 렌더링
       ui: { resourceUri: UI_TEMPLATE_URI },
-      // (레거시/호환) ChatGPT Apps의 outputTemplate 메타데이터도 함께 둠
       "openai/outputTemplate": UI_TEMPLATE_URI,
     },
   },
   async ({ region, fromYm, toYm, limit }: { region?: "서울" | "경기" | "인천"; fromYm: string; toYm: string; limit: number }) => {
-    let query = firestore
-      .collection("apt_monthly_aggregate_groups")
-      .where("yearMonth", ">=", fromYm)
-      .where("yearMonth", "<=", toYm)
-      .orderBy("yearMonth", "desc")
-      .limit(limit);
+    const docs = await searchSaleMonthlyTrends({
+      region,
+      fromYm,
+      toYm,
+      limit,
+    });
 
-    if (region) {
-      query = query.where("region", "==", region);
-    }
-
-    const snapshot = await query.get();
-    const rows = snapshot.docs
-      .flatMap((doc) => {
-        const data = doc.data();
-        return Array.isArray(data.items) ? data.items : [];
-      })
-      .sort((a, b) => String(b.yearMonth).localeCompare(String(a.yearMonth)))
-      .slice(0, limit)
+    const rows = docs
       .map((item) => ({
-        yearMonth: item.yearMonth,
-        region: item.region,
-        apartmentName: item.apartmentName,
-        avgPriceKrw: item.avgPriceKrw,
-        txCount: item.txCount,
-      }));
+        yearMonth: String(item.YEAR_MONTH),
+        region: String(item.REGION),
+        apartmentName: String(item.APARTMENT_NAME ?? "구단위"),
+        avgPriceKrw: Number(item.AVG_PRICE_KRW),
+        txCount: Number(item.TX_COUNT),
+      }))
+      .slice(0, limit);
 
     return {
       content: [
@@ -114,7 +102,6 @@ const httpServer = createServer(async (req, res) => {
 
   const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
 
-  // CORS preflight for browser-based / ChatGPT host calls
   if (req.method === "OPTIONS" && url.pathname === MCP_PATH) {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",

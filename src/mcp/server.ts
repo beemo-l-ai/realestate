@@ -1,12 +1,17 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { firestore } from "../lib/firebase.js";
 import { DISTRICT_MAP } from "../lib/districts.js";
+import {
+  getLatestRentTransactions,
+  getLatestSaleTransactions,
+  searchApartmentMetadata,
+  searchSaleMonthlyTrends,
+} from "../lib/store.js";
 
 const server = new McpServer({
   name: "kr-realestate-mcp",
-  version: "0.1.0",
+  version: "0.2.0",
 });
 
 const wonToEok = (amount: number): string => `${(amount / 100_000_000).toFixed(2)}억`;
@@ -50,6 +55,7 @@ server.registerTool(
     inputSchema: {
       districtName: z.string().optional(),
       districtCode: z.string().optional(),
+      legalDong: z.string().optional().describe("법정동 이름 (예: 대치동, 반포동)"),
       nameContains: z.string().optional().describe("아파트 이름 검색어 (예: '래미안')"),
     },
   },
@@ -61,22 +67,15 @@ server.registerTool(
       };
     }
 
-    const snapshot = await firestore
-      .collection("apt_metadata")
-      .where("districtCode", "==", code)
-      .limit(1000)
-      .get();
+    const docs = await searchApartmentMetadata({
+      districtCode: code,
+      legalDong: input.legalDong,
+      nameContains: input.nameContains,
+      limit: 1000,
+    });
 
-    let docs = snapshot.docs.map((doc) => doc.data() as any);
-
-    if (input.nameContains) {
-      docs = docs.filter(d => d.apartmentName.includes(input.nameContains!));
-    }
-
-    docs.sort((a, b) => b.totalTrades - a.totalTrades);
-
-    const summaries = docs.map(d =>
-      `${d.legalDong} ${d.apartmentName} | 평형: ${d.availableAreas.join(', ')}㎡ | 누적거래: ${d.totalTrades}건`
+    const summaries = docs.map((d) =>
+      `${d.legalDong} ${d.apartmentName} | 평형: ${d.availableAreas.join(", ")}㎡ | 누적거래: ${d.totalTrades}건`,
     );
 
     return {
@@ -86,7 +85,7 @@ server.registerTool(
           text: summaries.length > 0 ? summaries.join("\n") : "해당 조건의 아파트 데이터가 없습니다.",
         },
       ],
-      structuredContent: { docs }
+      structuredContent: { docs },
     };
   },
 );
@@ -101,29 +100,14 @@ server.registerTool(
   async (input) => {
     const districtCode = input.districtCode || resolveDistrictCode(input.districtName);
 
-    let query = firestore.collection("apt_monthly_aggregates")
-      .where("yearMonth", ">=", input.fromYm)
-      .where("yearMonth", "<=", input.toYm)
-      .orderBy("yearMonth", "asc")
-      .limit(120);
-
-    if (input.region) {
-      query = query.where("region", "==", input.region);
-    }
-
-    if (districtCode) {
-      query = query.where("districtCode", "==", districtCode);
-    }
-
-    if (input.apartmentName) {
-      query = query.where("apartmentName", "==", input.apartmentName);
-    } else {
-      // If no apartment is specified, use the district-level aggregates (where apartmentName is null)
-      query = query.where("apartmentName", "==", null);
-    }
-
-    const snapshot = await query.get();
-    const docs = snapshot.docs.map((doc) => doc.data());
+    const docs = await searchSaleMonthlyTrends({
+      region: input.region,
+      districtCode,
+      apartmentName: input.apartmentName,
+      fromYm: input.fromYm,
+      toYm: input.toYm,
+      limit: 120,
+    });
 
     if (docs.length === 0) {
       return {
@@ -136,7 +120,7 @@ server.registerTool(
       };
     }
 
-    const points = docs.map((d) => ({ ym: d.yearMonth, avg: d.avgPriceKrw }));
+    const points = docs.map((d) => ({ ym: String(d.YEAR_MONTH), avg: Number(d.AVG_PRICE_KRW) }));
     const chart = points
       .map((point) => `${point.ym}: ${wonToEok(point.avg)} ${"▇".repeat(Math.max(1, Math.round(point.avg / 200_000_000)))}`)
       .join("\n");
@@ -145,7 +129,8 @@ server.registerTool(
       .slice(0, 12)
       .map(
         (d) =>
-          `${d.yearMonth} | ${d.region} ${d.districtCode} | ${d.apartmentName} | 평균 ${wonToEok(d.avgPriceKrw)} | 거래 ${d.txCount}건`,
+          `${String(d.YEAR_MONTH)} | ${String(d.REGION)} ${String(d.DISTRICT_CODE)} | ${String(d.APARTMENT_NAME ?? "구단위")}` +
+          ` | 평균 ${wonToEok(Number(d.AVG_PRICE_KRW))} | 거래 ${Number(d.TX_COUNT)}건`,
       )
       .join("\n");
 
@@ -160,7 +145,7 @@ server.registerTool(
             "[월별 평균가 시각화(텍스트)]",
             chart,
             "",
-            "※ 데이터 출처: 국토교통부 실거래가 공개시스템 API를 가공한 Firestore 집계",
+            "※ 데이터 출처: 국토교통부 실거래가 공개시스템 API를 가공한 Oracle 집계",
           ].join("\n"),
         },
       ],
@@ -181,22 +166,22 @@ server.registerTool(
       region: z.enum(["서울", "경기", "인천"]).optional(),
       districtCode: z.string().optional(),
       districtName: z.string().optional().describe("구 단위 지명 (예: 강남구, 분당구)"),
-      apartmentName: z.string().optional(),
-      areaM2: z.number().optional().describe("전용면적(㎡). 메타데이터에서 확인된 크기를 지정하세요."),
+      legalDong: z.string().optional().describe("법정동 이름 (예: 대치동, 반포동)"),
+      apartmentName: z.string().optional().describe("정확한 아파트명(예: '래미안푸르지오'). 띄어쓰기 등 정확한 이름을 모를 경우 search_apartment_metadata 도구로 먼저 확인 권장."),
+      areaM2: z.number().optional().describe("전용면적(㎡). 예: 84 (소수점은 무시하고 앞자리로 검색됨)"),
       limit: z.number().int().min(1).max(30).default(10),
     },
   },
   async (input) => {
     const districtCode = input.districtCode || resolveDistrictCode(input.districtName);
-    let query = firestore.collection("apt_transactions").orderBy("tradedAt", "desc").limit(input.limit);
-
-    if (input.region) query = query.where("region", "==", input.region);
-    if (districtCode) query = query.where("districtCode", "==", districtCode);
-    if (input.apartmentName) query = query.where("apartmentName", "==", input.apartmentName);
-    if (input.areaM2) query = query.where("areaM2", "==", input.areaM2);
-
-    const snapshot = await query.get();
-    const rows = snapshot.docs.map((doc) => doc.data());
+    const rows = await getLatestSaleTransactions({
+      region: input.region,
+      districtCode,
+      legalDong: input.legalDong,
+      apartmentName: input.apartmentName,
+      areaM2: input.areaM2,
+      limit: input.limit,
+    });
 
     return {
       content: [
@@ -206,10 +191,60 @@ server.registerTool(
             ? rows
               .map(
                 (row) =>
-                  `${row.tradedAt} | ${row.region} ${row.legalDong} ${row.apartmentName} ${row.areaM2}㎡ ${row.floor}층 | ${wonToEok(row.priceKrw)}`,
+                  `${String(row.TRADED_AT)} | ${String(row.REGION)} ${String(row.LEGAL_DONG)} ` +
+                  `${String(row.APARTMENT_NAME)} ${Number(row.AREA_M2)}㎡ ${Number(row.FLOOR)}층 | ${wonToEok(Number(row.PRICE_KRW))}`,
               )
               .join("\n")
             : "조건에 맞는 거래 사례가 없습니다.",
+        },
+      ],
+      structuredContent: { rows },
+    };
+  },
+);
+
+server.registerTool(
+  "get_latest_rent_examples",
+  {
+    title: "수도권 전월세 거래 사례 조회",
+    description: "조건에 맞는 최근 전세/월세 거래 사례를 조회합니다.",
+    inputSchema: {
+      region: z.enum(["서울", "경기", "인천"]).optional(),
+      districtCode: z.string().optional(),
+      districtName: z.string().optional().describe("구 단위 지명 (예: 강남구, 분당구)"),
+      legalDong: z.string().optional().describe("법정동 이름 (예: 대치동, 반포동)"),
+      apartmentName: z.string().optional().describe("정확한 아파트명(예: '래미안푸르지오'). 띄어쓰기 등 정확한 이름을 모를 경우 search_apartment_metadata 도구로 먼저 확인 권장."),
+      areaM2: z.number().optional().describe("전용면적(㎡). 예: 84 (소수점은 무시하고 앞자리로 검색됨)"),
+      rentType: z.enum(["JEONSE", "WOLSE"]).optional().describe("JEONSE=전세, WOLSE=월세"),
+      limit: z.number().int().min(1).max(30).default(10),
+    },
+  },
+  async (input) => {
+    const districtCode = input.districtCode || resolveDistrictCode(input.districtName);
+    const rows = await getLatestRentTransactions({
+      region: input.region,
+      districtCode,
+      legalDong: input.legalDong,
+      apartmentName: input.apartmentName,
+      areaM2: input.areaM2,
+      rentType: input.rentType,
+      limit: input.limit,
+    });
+
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: rows.length
+            ? rows
+              .map(
+                (row) =>
+                  `${String(row.CONTRACTED_AT)} | ${String(row.REGION)} ${String(row.LEGAL_DONG)} ${String(row.APARTMENT_NAME)}` +
+                  ` ${Number(row.AREA_M2)}㎡ ${Number(row.FLOOR)}층 | ${String(row.RENT_TYPE)} | 보증금 ${wonToEok(Number(row.DEPOSIT_KRW))}` +
+                  ` / 월세 ${wonToEok(Number(row.MONTHLY_RENT_KRW))}`,
+              )
+              .join("\n")
+            : "조건에 맞는 전월세 거래 사례가 없습니다.",
         },
       ],
       structuredContent: { rows },

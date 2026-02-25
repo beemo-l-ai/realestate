@@ -1,6 +1,6 @@
-import { collectTradesByMonth } from "../collector/molitCollector.js";
+import { collectTradesByMonth, collectRentByMonth } from "../collector/molitCollector.js";
 import { seoulMetroDistricts } from "../lib/config.js";
-import { makeMonthlyAggregates, upsertMonthlyAggregates, upsertTrades, upsertApartmentMetadata } from "../lib/store.js";
+import { makeMonthlyAggregates, upsertMonthlyAggregates, upsertTrades, upsertApartmentMetadata, upsertRentTransactions, upsertMonthlyRentAggregates, makeMonthlyRentAggregates } from "../lib/store.js";
 
 const getYearMonths = (startYm: string, endYm: string): string[] => {
   const out: string[] = [];
@@ -33,8 +33,14 @@ const main = async (): Promise<void> => {
       const aggregates = makeMonthlyAggregates(trades);
       await upsertMonthlyAggregates(aggregates);
       await upsertApartmentMetadata(trades);
+
+      const rents = await collectRentByMonth(district.lawdCd, ym, district.region);
+      await upsertRentTransactions(rents);
+      const rentAggregates = makeMonthlyRentAggregates(rents);
+      await upsertMonthlyRentAggregates(rentAggregates);
+
       console.log(
-        `[INGEST] ${district.region}/${district.lawdCd}/${ym}: trades=${trades.length}, monthlyAgg=${aggregates.length}`,
+        `[INGEST] ${district.region}/${district.lawdCd}/${ym}: trades=${trades.length}, monthlyAgg=${aggregates.length}, rents=${rents.length}, rentAgg=${rentAggregates.length}`,
       );
     }
   }

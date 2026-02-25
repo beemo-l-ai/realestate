@@ -1,25 +1,27 @@
 import express from "express";
+import cors from "cors";
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
 const PORT = Number(process.env.PORT || 3000);
 
-const server = new McpServer({
-  name: "realestate-app",
-  version: "0.1.0"
-});
+function createRealestateServer() {
+  const server = new McpServer({
+    name: "realestate-app",
+    version: "0.1.0"
+  });
 
-server.registerResource(
-  "listings-widget",
-  "ui://widget/listings.html",
-  {},
-  async () => ({
-    contents: [
-      {
-        uri: "ui://widget/listings.html",
-        mimeType: "text/html",
-        text: `<!doctype html>
+  server.registerResource(
+    "listings-widget",
+    "ui://widget/listings.html",
+    {},
+    async () => ({
+      contents: [
+        {
+          uri: "ui://widget/listings.html",
+          mimeType: "text/html",
+          text: `<!doctype html>
 <html lang="ko">
   <head>
     <meta charset="utf-8" />
@@ -51,87 +53,84 @@ server.registerResource(
     </script>
   </body>
 </html>`
+        }
+      ]
+    })
+  );
+
+  server.registerTool(
+    "search_listings",
+    {
+      title: "매물 검색",
+      description: "도시와 거래 유형(월세/전세/매매)으로 샘플 매물을 조회합니다.",
+      inputSchema: {
+        city: z.string().describe("예: 서울, 부산"),
+        type: z.enum(["월세", "전세", "매매"]).default("월세")
+      },
+      _meta: {
+        "openai/outputTemplate": "ui://widget/listings.html",
+        "openai/toolInvocation/invoking": "매물 조회 중...",
+        "openai/toolInvocation/invoked": "매물 조회 완료"
       }
-    ]
-  })
-);
-
-server.registerTool(
-  "search_listings",
-  {
-    title: "매물 검색",
-    description: "도시와 거래 유형(월세/전세/매매)으로 샘플 매물을 조회합니다.",
-    inputSchema: {
-      city: z.string().describe("예: 서울, 부산"),
-      type: z.enum(["월세", "전세", "매매"]).default("월세")
     },
-    _meta: {
-      "openai/outputTemplate": "ui://widget/listings.html",
-      "openai/toolInvocation/invoking": "매물 조회 중...",
-      "openai/toolInvocation/invoked": "매물 조회 완료"
-    }
-  },
-  async ({ city, type }) => {
-    const listings = [
-      { title: "역세권 오피스텔", city, type, price: "보증금 1,000 / 월 70" },
-      { title: "신축 투룸", city, type, price: "보증금 2,000 / 월 95" },
-      { title: "채광 좋은 원룸", city, type, price: "보증금 500 / 월 55" }
-    ];
+    async ({ city, type }) => {
+      const listings = [
+        { title: "역세권 오피스텔", city, type, price: "보증금 1,000 / 월 70" },
+        { title: "신축 투룸", city, type, price: "보증금 2,000 / 월 95" },
+        { title: "채광 좋은 원룸", city, type, price: "보증금 500 / 월 55" }
+      ];
 
-    return {
-      content: [{ type: "text", text: `${city} ${type} 매물 ${listings.length}건을 찾았습니다.` }],
-      structuredContent: { listings }
-    };
-  }
-);
+      return {
+        content: [{ type: "text", text: `${city} ${type} 매물 ${listings.length}건을 찾았습니다.` }],
+        structuredContent: { listings }
+      };
+    }
+  );
+
+  return server;
+}
 
 const app = express();
+
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "mcp-session-id"],
+  exposedHeaders: ["Mcp-Session-Id"]
+}));
+
+// ChatGPT Web SDK requires raw body or parsed body, StreamableHTTPServerTransport handles standard express req
 app.use(express.json());
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, name: "realestate-app", version: "0.1.0" });
 });
 
-let transport;
+// Setup the exact route pattern defined in the OpenAI Quickstart
+app.all("/mcp", async (req, res) => {
+  const server = createRealestateServer();
 
-app.get(["/", "/sse"], async (req, res) => {
-  console.log("New SSE connection requested");
-  if (transport) {
-    console.log("Closing existing transport for new connection");
-    try {
-      await server.close();
-    } catch (e) {
-      console.error("Error closing existing connection:", e);
-    }
-    transport = null;
-  }
-
-  const currentTransport = new SSEServerTransport("/mcp", res);
-  transport = currentTransport;
-
-  res.on("close", async () => {
-    console.log("SSE connection closed by client");
-    if (transport === currentTransport) {
-      try {
-        await server.close();
-        transport = null;
-      } catch (e) {
-        console.error("Error closing server on disconnect:", e);
-      }
-    }
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: undefined, // stateless mode
+    enableJsonResponse: true,
   });
 
-  await server.connect(currentTransport);
-});
+  res.on("close", () => {
+    transport.close();
+    server.close();
+  });
 
-app.post("/mcp", async (req, res) => {
-  if (!transport) {
-    res.status(500).json({ error: "No active SSE connection" });
-    return;
+  try {
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+  } catch (error) {
+    console.error("Error handling MCP request:", error);
+    if (!res.headersSent) {
+      res.status(500).send("Internal server error");
+    }
   }
-  await transport.handlePostMessage(req, res);
 });
 
 app.listen(PORT, () => {
-  console.log(`[realestate-app] MCP endpoint listening on http://localhost:${PORT}/sse`);
+  console.log(`[realestate-app] MCP endpoint listening on http://localhost:${PORT}/mcp`);
 });

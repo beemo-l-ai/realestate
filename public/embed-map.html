@@ -2,126 +2,184 @@
 <html lang="ko">
 
 <head>
-    <meta charset="utf-8">
-    <title>Map Embed</title>
-    <style>
-        body,
-        html {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            background: #f8fafc;
-        }
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Map Embed</title>
+  <style>
+    :root {
+      --text: #0f172a;
+      --muted: #475569;
+      --bg: #eef6ff;
+      --line: #d3e1ef;
+      --card: #ffffff;
+      --accent: #fee500;
+    }
 
-        #map {
-            width: 100%;
-            height: 100vh;
-        }
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans KR", sans-serif;
+      color: var(--text);
+    }
 
-        .loading {
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            color: #64748b;
-            font-family: ui-sans-serif, system-ui, sans-serif;
-            font-size: 14px;
-            font-weight: 500;
-        }
+    #map {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
 
-        .spinner {
-            margin-bottom: 12px;
-            width: 24px;
-            height: 24px;
-            border: 3px solid #e2e8f0;
-            border-top-color: #3b82f6;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
+    .loading,
+    .fallback {
+      display: grid;
+      place-items: center;
+      align-content: center;
+      gap: 10px;
+      height: 100%;
+      text-align: center;
+      padding: 18px;
+    }
 
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
-        }
-    </style>
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #0369a1;
+      box-shadow: 16px 0 0 #60a5fa, -16px 0 0 #93c5fd;
+      animation: bounce 900ms ease-in-out infinite alternate;
+    }
+
+    @keyframes bounce {
+      0% { transform: translateY(0); }
+      100% { transform: translateY(-6px); }
+    }
+
+    .desc {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .fallback-card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--card);
+      padding: 14px;
+      max-width: 360px;
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+    }
+
+    .fallback-title {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      letter-spacing: -0.01em;
+    }
+
+    .btn {
+      margin-top: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      border-radius: 10px;
+      padding: 10px 14px;
+      color: #191919;
+      font-weight: 700;
+      background: var(--accent);
+      border: 1px solid #f1d900;
+      font-size: 13px;
+    }
+  </style>
 </head>
 
 <body>
-    <div id="map">
-        <div class="loading">
-            <div class="spinner"></div>
-            <div>지도를 불러오는 중...</div>
-        </div>
+  <div id="map">
+    <div class="loading">
+      <div class="dot" aria-hidden="true"></div>
+      <div>지도를 불러오는 중...</div>
     </div>
-    <script>
-        const params = new URLSearchParams(window.location.search);
-        const key = '__KAKAO_KEY__'; // Replaced by server
-        const address = params.get('address');
-        const title = params.get('title') || address;
+  </div>
 
-        if (!key) {
-            document.getElementById('map').innerHTML = '<div class="loading">카카오맵 API 키가 설정되지 않았습니다.</div>';
-        } else if (!address) {
-            document.getElementById('map').innerHTML = '<div class="loading">주소 정보가 없습니다.</div>';
-        } else {
-            const script = document.createElement('script');
-            script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(key)}&autoload=false&libraries=services`;
-            script.onload = () => {
-                kakao.maps.load(() => {
-                    const mapContainer = document.getElementById('map');
-                    mapContainer.innerHTML = ''; // clear loading
-                    const map = new kakao.maps.Map(mapContainer, { center: new kakao.maps.LatLng(37.566826, 126.9786567), level: 4 });
-                    const geocoder = new kakao.maps.services.Geocoder();
-                    const places = new kakao.maps.services.Places();
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const key = '__KAKAO_KEY__';
+    const address = params.get('address');
+    const title = params.get('title') || address;
+    const mapEl = document.getElementById('map');
 
-                    const setMarker = (lat, lng, name) => {
-                        const center = new kakao.maps.LatLng(lat, lng);
-                        map.setCenter(center);
-                        const marker = new kakao.maps.Marker({ position: center, map });
-                        const info = new kakao.maps.InfoWindow({ content: `<div style="padding:4px 8px;font-size:12px;font-weight:600;white-space:nowrap;">${name}</div>` });
-                        info.open(map, marker);
-                    };
+    const renderTextState = (message) => {
+      mapEl.innerHTML = `<div class="loading"><div>${message}</div></div>`;
+    };
 
-                    const fallbackOsm = () => {
-                        const enc = encodeURIComponent(address);
-                        const kakaoUrl = 'https://map.kakao.com/link/search/' + enc;
+    const renderFallback = () => {
+      const kakaoUrl = `https://map.kakao.com/link/search/${encodeURIComponent(address || '')}`;
+      mapEl.innerHTML = `
+        <div class="fallback">
+          <div class="fallback-card">
+            <div class="fallback-title">정확한 위치를 찾지 못했습니다</div>
+            <div class="desc">주소: ${String(address || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+            <a class="btn" href="${kakaoUrl}" target="_blank" rel="noreferrer">카카오맵에서 직접 열기</a>
+          </div>
+        </div>
+      `;
+    };
 
-                        mapContainer.innerHTML = `
-                            <div style="display:flex; flex-direction:column; justify-content:center; align-items:center; height:100vh; background:#f8fafc; font-family:sans-serif; color:#334155;">
-                                <div style="font-size:16px; font-weight:600; margin-bottom:12px;">정확한 지도 위치를 찾을 수 없습니다</div>
-                                <div style="font-size:14px; margin-bottom:24px; color:#64748b; padding:0 20px; text-align:center;">주소: \${address}</div>
-                                <a href="\${kakaoUrl}" target="_blank" style="padding:10px 16px; background:#fee500; color:#191919; text-decoration:none; border-radius:8px; font-weight:600; font-size:14px; display:inline-flex; align-items:center;">
-                                    카카오맵에서 직접 검색하기
-                                </a>
-                            </div>
-                        `;
-                    };
+    if (!key) {
+      renderTextState('카카오맵 API 키가 설정되지 않았습니다.');
+    } else if (!address) {
+      renderTextState('주소 정보가 없습니다.');
+    } else {
+      const script = document.createElement('script');
+      script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(key)}&autoload=false&libraries=services`;
 
-                    geocoder.addressSearch(address, (result, status) => {
-                        if (status === kakao.maps.services.Status.OK && result.length) {
-                            setMarker(result[0].y, result[0].x, title);
-                        } else {
-                            places.keywordSearch(address, (r, s) => {
-                                if (s === kakao.maps.services.Status.OK && r.length) {
-                                    setMarker(r[0].y, r[0].x, r[0].place_name || title);
-                                } else {
-                                    fallbackOsm();
-                                }
-                            });
-                        }
-                    });
-                });
-            };
-            script.onerror = () => {
-                document.getElementById('map').innerHTML = '<div class="loading">지도 SDK 로드 실패</div>';
-            };
-            document.head.appendChild(script);
-        }
-    </script>
+      script.onload = () => {
+        kakao.maps.load(() => {
+          mapEl.innerHTML = '';
+          const map = new kakao.maps.Map(mapEl, {
+            center: new kakao.maps.LatLng(37.566826, 126.9786567),
+            level: 4
+          });
+          const geocoder = new kakao.maps.services.Geocoder();
+          const places = new kakao.maps.services.Places();
+
+          const setMarker = (lat, lng, name) => {
+            const center = new kakao.maps.LatLng(lat, lng);
+            map.setCenter(center);
+            const marker = new kakao.maps.Marker({ position: center, map });
+            const info = new kakao.maps.InfoWindow({
+              content: `<div style="padding:5px 8px;font-size:12px;font-weight:700;white-space:nowrap;">${String(name).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>`
+            });
+            info.open(map, marker);
+          };
+
+          geocoder.addressSearch(address, (result, status) => {
+            if (status === kakao.maps.services.Status.OK && result.length) {
+              setMarker(result[0].y, result[0].x, title);
+              return;
+            }
+
+            places.keywordSearch(address, (result2, status2) => {
+              if (status2 === kakao.maps.services.Status.OK && result2.length) {
+                setMarker(result2[0].y, result2[0].x, result2[0].place_name || title);
+              } else {
+                renderFallback();
+              }
+            });
+          });
+        });
+      };
+
+      script.onerror = () => {
+        renderTextState('지도 SDK를 불러오지 못했습니다.');
+      };
+
+      document.head.appendChild(script);
+    }
+  </script>
 </body>
 
 </html>

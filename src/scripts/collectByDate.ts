@@ -1,6 +1,6 @@
 import { collectTradesByMonth, collectRentByMonth } from "../collector/molitCollector.js";
 import { seoulMetroDistricts } from "../lib/config.js";
-import { makeMonthlyAggregates, upsertMonthlyAggregates, upsertTrades, upsertApartmentMetadata, upsertRentTransactions, upsertMonthlyRentAggregates, makeMonthlyRentAggregates } from "../lib/store.js";
+import { makeMonthlyAggregates, upsertMonthlyAggregates, upsertTrades, upsertApartmentMetadata, upsertRentTransactions, upsertMonthlyRentAggregates, makeMonthlyRentAggregates, upsertApartmentMetadataFromRents } from "../lib/store.js";
 
 type Mode = "bootstrap" | "incremental";
 
@@ -169,6 +169,14 @@ const main = async (): Promise<void> => {
           `upsertMonthlyRentAggregates ${district.region}/${district.lawdCd}/${ym}`,
         );
         console.log(`[STEP] upsertMonthlyRent:done ${district.region}/${district.lawdCd}/${ym}`);
+
+        console.log(`[STEP] upsertMetadataFromRent:start ${district.region}/${district.lawdCd}/${ym}`);
+        await withTimeout(
+          upsertApartmentMetadataFromRents(rents),
+          60_000,
+          `upsertApartmentMetadataFromRents ${district.region}/${district.lawdCd}/${ym}`,
+        );
+        console.log(`[STEP] upsertMetadataFromRent:done ${district.region}/${district.lawdCd}/${ym}`);
 
         console.log(
           `[INGEST] mode=${cliArgs.mode} ${district.region}/${district.lawdCd}/${ym}: trades=${trades.length}, monthlyAgg=${aggregates.length}, rents=${rents.length}, rentAgg=${rentAggregates.length}`,

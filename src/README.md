@@ -1,5 +1,8 @@
 # src Directory Guide
 
+(업데이트) - ChatGPT MCP 연동시 '가장 비싼 월세' 조회나 지역 문의 시 \`show_map\` 툴을 호출하여 텍스트 데이터와 지도를 함께 보여주는 기능(Map 강화)이 적용되어 있습니다.
+(업데이트) - 아파트 후보 검색(`search_apartment_candidates`)은 UI 후보 버튼 선택을 지원하며, 선택값은 \`select_apartment_candidate\` 툴로 다시 전달되어 후속 SQL 조회에 활용됩니다.
+
 `src`는 아래 5개 책임 단위로 분리되어 있습니다.
 
 - `apps`: ChatGPT Apps SDK 템플릿/연동 계층

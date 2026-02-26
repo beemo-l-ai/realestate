@@ -282,6 +282,28 @@ export const upsertApartmentMetadata = async (records: TradeRecord[]): Promise<v
   });
 };
 
+export const upsertApartmentMetadataFromRents = async (records: RentRecord[]): Promise<void> => {
+  if (records.length === 0) return;
+
+  // Reuse sale metadata upsert path so candidate search includes apartments
+  // that currently appear only in rent transactions.
+  const mapped: TradeRecord[] = records.map((record) => ({
+    id: `rent-meta|${record.id}`,
+    region: record.region,
+    districtCode: record.districtCode,
+    legalDong: record.legalDong,
+    apartmentName: record.apartmentName,
+    areaM2: record.areaM2,
+    priceKrw: record.depositKrw,
+    floor: record.floor,
+    tradedAt: record.contractedAt,
+    source: "MOLIT_RTMS",
+    collectedAt: record.collectedAt,
+  }));
+
+  await upsertApartmentMetadata(mapped);
+};
+
 export const upsertMonthlyAggregates = async (aggregates: MonthlyAggregate[]): Promise<void> => {
   if (aggregates.length === 0) return;
   await ensureOracleSchema();
@@ -474,11 +496,11 @@ export const upsertMonthlyRentAggregates = async (aggregates: Array<MonthlyAggre
 };
 
 export const searchApartmentMetadata = async (input: {
-  districtCode: string;
+  districtCode?: string;
   legalDong?: string;
   nameContains?: string;
   limit?: number;
-}): Promise<Array<{ legalDong: string; apartmentName: string; availableAreas: number[]; totalTrades: number }>> => {
+}): Promise<Array<{ districtCode: string; legalDong: string; apartmentName: string; availableAreas: number[]; totalTrades: number }>> => {
   await ensureOracleSchema();
   const limitValue = input.limit ?? 100;
 
@@ -486,21 +508,22 @@ export const searchApartmentMetadata = async (input: {
     const result = await connection.execute(
       `
       SELECT
+        m.district_code,
         m.legal_dong,
         m.apartment_name,
         m.total_sale_trades,
         LISTAGG(TO_CHAR(a.area_m2), ',') WITHIN GROUP (ORDER BY a.area_m2) AS area_list
       FROM re_apartment_metadata m
       LEFT JOIN re_apartment_areas a ON a.metadata_id = m.id
-      WHERE m.district_code = :district_code
+      WHERE (:district_code IS NULL OR m.district_code = :district_code)
         AND (:name_contains IS NULL OR REPLACE(m.apartment_name, ' ', '') LIKE '%' || REPLACE(:name_contains, ' ', '') || '%')
         AND (:legal_dong IS NULL OR m.legal_dong = :legal_dong)
-      GROUP BY m.legal_dong, m.apartment_name, m.total_sale_trades
+      GROUP BY m.district_code, m.legal_dong, m.apartment_name, m.total_sale_trades
       ORDER BY m.total_sale_trades DESC, m.apartment_name ASC
       FETCH FIRST ${Math.max(1, Math.min(1000, limitValue))} ROWS ONLY
       `,
       {
-        district_code: input.districtCode,
+        district_code: input.districtCode ?? null,
         name_contains: input.nameContains ?? null,
         legal_dong: input.legalDong ?? null,
       },
@@ -508,6 +531,7 @@ export const searchApartmentMetadata = async (input: {
 
     const rows = (result.rows ?? []) as Array<Record<string, unknown>>;
     return rows.map((row) => ({
+      districtCode: String(row.DISTRICT_CODE),
       legalDong: String(row.LEGAL_DONG),
       apartmentName: String(row.APARTMENT_NAME),
       availableAreas: String(row.AREA_LIST ?? "")
@@ -807,5 +831,4 @@ export const executeSelectQuery = async (query: string): Promise<Array<Record<st
     return (result.rows ?? []) as Array<Record<string, unknown>>;
   });
 };
-
 

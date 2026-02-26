@@ -13,6 +13,7 @@ import { searchSaleMonthlyTrends } from "../../lib/store.js";
 
 const UI_TEMPLATE_URI = "ui://realestate/trend-widget.html";
 const widgetHtml = readFileSync(new URL("../../../public/trend-widget.html", import.meta.url), "utf8");
+const WIDGET_DOMAIN = process.env.WIDGET_DOMAIN || "http://localhost:8787";
 
 const server = new McpServer({
   name: "kr-realestate-apps-template",
@@ -25,6 +26,16 @@ registerAppResource(server, "trend-widget", UI_TEMPLATE_URI, {}, async () => ({
       uri: UI_TEMPLATE_URI,
       mimeType: RESOURCE_MIME_TYPE,
       text: widgetHtml,
+      _meta: {
+        ui: {
+          domain: WIDGET_DOMAIN,
+          csp: {
+            connectDomains: [],
+            resourceDomains: [],
+            frameDomains: [],
+          },
+        },
+      },
     },
   ],
 }));

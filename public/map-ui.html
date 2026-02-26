@@ -100,6 +100,14 @@
       border-bottom: 1px solid var(--line);
       background: #f8fafc;
       flex-shrink: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .title-group {
+      display: flex;
+      flex-direction: column;
     }
 
     .title {
@@ -111,6 +119,32 @@
       margin-top: 2px;
       font-size: 12px;
       color: var(--muted);
+    }
+
+    .full-screen-btn {
+      background: #ffffff;
+      color: #333;
+      border: 1px solid var(--line);
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      padding: 0;
+    }
+
+    .full-screen-btn:hover {
+      background: #f8fafc;
+      border-color: #0ea5e9;
+      color: #0ea5e9;
+    }
+
+    .full-screen-btn svg {
+      width: 18px;
+      height: 18px;
     }
 
     #content {
@@ -167,8 +201,17 @@
   <div class="widget-root">
     <div class="shell">
       <div class="header">
-        <div class="title" id="title">위치 정보</div>
-        <div class="subtitle" id="subtitle">주소를 확인 중입니다...</div>
+        <div class="title-group">
+          <div class="title" id="title">위치 정보</div>
+          <div class="subtitle" id="subtitle">주소를 확인 중입니다...</div>
+        </div>
+        <button id="full-screen-btn" class="full-screen-btn" style="display: none;" title="카카오맵에서 크게보기">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+            <polyline points="15 3 21 3 21 9"></polyline>
+            <line x1="10" y1="14" x2="21" y2="3"></line>
+          </svg>
+        </button>
       </div>
       <div id="content">
         <div id="loading" class="loading-overlay">
@@ -184,18 +227,37 @@
     const subtitleEl = document.getElementById('subtitle');
     const contentEl = document.getElementById('content');
     const loadingEl = document.getElementById('loading');
+    const fullScreenBtn = document.getElementById('full-screen-btn');
 
-    function renderLocation(address, title, domain) {
-      if (!address || !domain) return;
+    let currentAddresses = [];
+
+    function renderLocation(addresses = [], title, domain, searchPattern = {}, stats = []) {
+      if (addresses.length === 0 || !domain) return;
+      currentAddresses = addresses;
+
       titleEl.textContent = title || '위치 정보';
-      subtitleEl.textContent = address;
+      subtitleEl.textContent = addresses.length === 1 
+        ? addresses[0] 
+        : `${addresses[0]} 외 ${addresses.length - 1}곳`;
 
       // 1) Show loading
       loadingEl.style.opacity = '1';
       loadingEl.style.display = 'grid';
 
       // 2) Create Iframe
-      const iframeUrl = `${domain}/embed/map?address=${encodeURIComponent(address)}&title=${encodeURIComponent(title || address)}`;
+      let iframeUrl = `${domain}/embed/map?title=${encodeURIComponent(title || addresses[0])}`;
+      iframeUrl += `&addresses=${encodeURIComponent(JSON.stringify(addresses))}`;
+      
+      if (searchPattern && Object.keys(searchPattern).length > 0) {
+        iframeUrl += `&searchPattern=${encodeURIComponent(JSON.stringify(searchPattern))}`;
+      }
+
+      if (stats && stats.length > 0) {
+        iframeUrl += `&stats=${encodeURIComponent(JSON.stringify(stats))}`;
+      }
+
+      fullScreenBtn.style.display = 'flex';
+
       const iframe = document.createElement('iframe');
       iframe.src = iframeUrl;
       iframe.title = '지도';
@@ -212,25 +274,39 @@
       container.appendChild(iframe);
     }
 
+    fullScreenBtn.addEventListener('click', () => {
+      if (currentAddresses && currentAddresses.length > 0) {
+        // Link to Kakao Map Search
+        const searchAddr = currentAddresses[0];
+        const kakaoUrl = `https://map.kakao.com/link/search/${encodeURIComponent(searchAddr)}`;
+        window.open(kakaoUrl, '_blank');
+      }
+    });
+
     // --- Message Listeners ---
     window.addEventListener('message', (event) => {
       if (event.source !== window.parent) return;
       const message = event.data;
       if (message?.method === 'ui/notifications/tool-result') {
         const data = message.params?.structuredContent || message.params;
-        if (data?.address) renderLocation(data.address, data.title, data.domain);
+        if (data?.addresses) {
+          renderLocation(data.addresses, data.title, data.domain, data.searchPattern, data.stats);
+        }
       }
     });
 
-    // ChatGPT SDK: toolOutput가 스크립트 실행 후 설정될 수 있으므로 set_globals 이벤트도 수신
     window.addEventListener('openai:set_globals', (event) => {
       const data = event.detail?.globals?.toolOutput?.structuredContent || event.detail?.globals?.toolOutput;
-      if (data?.address) renderLocation(data.address, data.title, data.domain);
+      if (data?.addresses) {
+        renderLocation(data.addresses, data.title, data.domain, data.searchPattern, data.stats);
+      }
     }, { passive: true });
 
     try {
       const data = window?.openai?.toolOutput?.structuredContent || window?.openai?.toolOutput;
-      if (data?.address) renderLocation(data.address, data.title, data.domain);
+      if (data?.addresses) {
+        renderLocation(data.addresses, data.title, data.domain, data.searchPattern, data.stats);
+      }
     } catch (e) { }
 
     // --- Local Dev Flow Simulator ---
@@ -240,13 +316,22 @@
       devPanel.innerHTML = `
         <div id="dev-test-panel">
           <b>🛠️ Local Map Test</b>
-          <button onclick="mockMap()">샘플 데이터 주입</button>
+          <button onclick="mockMap()">단일 주소 테스트</button>
+          <button onclick="mockMultiMap()">다중 주소 테스트</button>
         </div>
       `;
       document.body.appendChild(devPanel);
 
       window.mockMap = () => {
         renderLocation('경기도 성남시 분당구 정자동 화인아파트', '화인아파트 위치', location.origin);
+      };
+
+      window.mockMultiMap = () => {
+        renderLocation('', '주요 아파트 비교', location.origin, [
+          '서울 강남구 대치동 은마아파트',
+          '서울 서초구 반포동 아크로리버파크',
+          '서울 송파구 잠실동 잠실엘스'
+        ]);
       };
     }
   </script>

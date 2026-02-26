@@ -135,29 +135,6 @@ function createRealestateServer() {
 
   let queryCount = 0;
 
-  // 1. 시세/매물 리스트 위젯 (listings-v2.html)
-  registerAppResource(
-    server,
-    "listings-widget",
-    "ui://widget/listings-v2.html",
-    {},
-    async () => ({
-      contents: [
-        {
-          uri: "ui://widget/listings-v2.html",
-          mimeType: RESOURCE_MIME_TYPE,
-          text: readFileSync(path.join(PUBLIC_DIR, "listings-v2.html"), "utf-8"),
-          _meta: {
-            ui: {
-              domain: WIDGET_DOMAIN,
-              csp: DEFAULT_CSP
-            }
-          }
-        }
-      ]
-    })
-  );
-
   // 2. 지도 UI 위젯
   registerAppResource(
     server,
@@ -225,80 +202,6 @@ function createRealestateServer() {
         }
       ]
     })
-  );
-
-  server.registerTool(
-    "search_listings",
-    {
-      title: "실거래 사례 샘플 조회 (단순 참고용)",
-      description: "주의: 시세 추이, 거래 건수, 통계 조회용이 아닙니다! 오직 화면에 보여줄 개별 실거래 사례 샘플 5개만 반환합니다. 시세나 통계를 묻는 질문에는 절대 이 도구를 쓰지 말고 반드시 'query_realestate_db'를 사용하세요.",
-      inputSchema: {
-        city: z.string().describe("예: 서울, 부산"),
-        type: z.enum(["월세", "전세", "매매"]).default("매매")
-      },
-      _meta: {
-        ui: { resourceUri: "ui://widget/listings-v2.html" },
-        "openai/outputTemplate": "ui://widget/listings-v2.html",
-        "openai/toolInvocation/invoking": "매물 조회 중...",
-        "openai/toolInvocation/invoked": "매물 조회 완료"
-      }
-    },
-    async ({ city, type }) => {
-      const districtCode = resolveDistrictCode(city);
-      let listings = [];
-
-      try {
-        if (type === "매매") {
-          const rows = await getLatestSaleTransactions({
-            districtCode,
-            limit: 5,
-          });
-          listings = rows.map((row) => ({
-            title: `${row.LEGAL_DONG} ${Math.floor(Number(row.AREA_M2))}㎡`,
-            city: `${row.REGION} ${row.APARTMENT_NAME}`,
-            type: "매매",
-            price: `매매 ${wonToEok(Number(row.PRICE_KRW))}`,
-          }));
-        } else {
-          const rentType = type === "전세" ? "JEONSE" : "WOLSE";
-          const rows = await getLatestRentTransactions({
-            districtCode,
-            rentType,
-            limit: 5,
-          });
-          listings = rows.map((row) => {
-            const price = rentType === "JEONSE"
-              ? `전세 ${wonToEok(Number(row.DEPOSIT_KRW))}`
-              : `보증금 ${wonToEok(Number(row.DEPOSIT_KRW))} / 월 ${Math.floor(Number(row.MONTHLY_RENT_KRW) / 10000)}만`;
-
-            return {
-              title: `${row.LEGAL_DONG} ${Math.floor(Number(row.AREA_M2))}㎡`,
-              city: `${row.REGION} ${row.APARTMENT_NAME}`,
-              type,
-              price,
-            };
-          });
-        }
-
-      } catch (err) {
-        console.error("Failed to query DB for listings:", err);
-      }
-
-      if (listings.length === 0) {
-        return {
-          content: [{ type: "text", text: `${city} ${type} 매물을 찾을 수 없습니다.` }],
-          structuredContent: { listings: [] }
-        };
-      }
-
-      return {
-        content: [{ type: "text", text: `${city} ${type} 최근 실거래 ${listings.length}건을 찾았습니다.` }],
-        structuredContent: { listings },
-        _meta: {
-          "openai/outputTemplate": "ui://widget/listings-v2.html"
-        }
-      };
-    }
   );
 
   server.registerTool(
@@ -527,31 +430,100 @@ UI에서 후보를 클릭하면 \`select_apartment_candidate\` 도구를 통해 
   server.registerTool(
     "get_location_ui",
     {
-      title: "위치 정보 뷰어 (UI 카드)",
-      description: "특정 주소나 아파트 단지의 위치를 시각적인 UI 카드로 사용자에게 보여줍니다. '해당 지역이 어디야?', '가장 비싼 월세' 등의 쿼리 답변 시, 텍스트와 함께 이 도구를 호출하여 시각적 위치 정보를 반드시 제공하세요. (내부적으로 위치 UI 카드를 렌더링합니다.)",
+      title: "위치 정보 및 주변 시세 뷰어 (지도 위젯)",
+      description: "특정 아파트 단지나 주소들의 위치를 지도에 표시하고, 주변의 1개월 평균 실거래 시세를 함께 보여줍니다. 'addresses' 배열에 여러 주소를 넣을 수 있으며, 'searchPattern'을 통해 보고 싶은 매물 종류(매매/전세/월세)와 평형대를 지정할 수 있습니다.",
       inputSchema: {
-        address: z.string().describe("지도에서 검색할 주소, 도로명 또는 건물명 (예: '서울 강남구 대치동 은마아파트' 또는 '판교역')"),
-        title: z.string().describe("지도 상단에 표시할 제목 (예: '은마아파트 실거래 위치')")
+        addresses: z.array(z.string()).describe("지도에서 검색할 주소들의 배열. (예: ['서울 강남구 대치동 은마아파트', '서울 서초구 반포동 아크로리버파크'])"),
+        title: z.string().describe("지도 상단에 표시할 제목 (예: '주요 아파트 실거래 위치')"),
+        searchPattern: z.object({
+          type: z.enum(["매매", "전세", "월세"]).optional().describe("시세를 조회할 거래 유형"),
+          area: z.number().optional().describe("시세를 조회할 전용면적(㎡) 기준")
+        }).optional().describe("지도에 표시할 평균 시세 기준 (평형, 거래유형)")
       },
       _meta: {
         ui: { resourceUri: "ui://widget/map-ui.html" },
         "openai/outputTemplate": "ui://widget/map-ui.html",
-        "openai/toolInvocation/invoking": "위치 정보를 불러오는 중...",
-        "openai/toolInvocation/invoked": "위치 정보 표시 완료"
+        "openai/toolInvocation/invoking": "위치 및 시세 정보를 불러오는 중...",
+        "openai/toolInvocation/invoked": "지도 및 시세 표시 완료"
       }
     },
-    async ({ address, title }) => {
-      console.log("[mcp] get_location_ui called", { address, title });
-      if (!address) {
+    async ({ addresses, title, searchPattern }) => {
+      console.log("[mcp] get_location_ui called", { addresses, title, searchPattern });
+      
+      const targetAddresses = (addresses || []).filter(addr => !!addr);
+
+      if (targetAddresses.length === 0) {
         return {
           content: [{ type: "text", text: "위치 표시 실패: 검색할 주소가 제공되지 않았습니다." }],
           isError: true
         };
       }
 
+      // Fetch recent stats for these addresses if they are apartment names
+      const stats = [];
+      try {
+        for (const addr of targetAddresses) {
+          const tokens = addr.split(' ');
+          const aptName = tokens[tokens.length - 1];
+          
+          if (aptName) {
+            const query = `
+              SELECT trade_type, area_m2, avg_price_krw, avg_deposit_krw, avg_monthly_rent_krw, tx_count
+              FROM re_recent_area_stats
+              WHERE apartment_name = :apt_name
+                AND (:trade_type IS NULL OR trade_type = :trade_type)
+                AND (:area_m2 IS NULL OR TRUNC(area_m2) = TRUNC(:area_m2))
+              ORDER BY updated_at DESC
+            `;
+
+            const tradeType = searchPattern?.type 
+              ? (searchPattern.type === '매매' ? 'SALE' : (searchPattern.type === '전세' ? 'JEONSE' : 'WOLSE'))
+              : null;
+
+            const rows = await executeSelectQuery(query, {
+              apt_name: aptName,
+              trade_type: tradeType,
+              area_m2: searchPattern?.area ?? null
+            });
+            
+            if (rows.length > 0) {
+              stats.push({
+                address: addr,
+                apartmentName: aptName,
+                data: rows.map(r => ({
+                  type: r.TRADE_TYPE,
+                  area: r.AREA_M2,
+                  avgPrice: r.AVG_PRICE_KRW,
+                  avgDeposit: r.AVG_DEPOSIT_KRW,
+                  avgRent: r.AVG_MONTHLY_RENT_KRW,
+                  count: r.TX_COUNT
+                }))
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch stats for map:", err);
+      }
+
+      const displayAddress = targetAddresses.length === 1 
+        ? targetAddresses[0] 
+        : `${targetAddresses[0]} 외 ${targetAddresses.length - 1}곳`;
+
+      let summaryText = `'${displayAddress}' 위치를 지도 위젯으로 표시합니다.`;
+      if (stats.length > 0) {
+        summaryText += ` (최근 1개월 평균 시세 포함)`;
+      }
+
       return {
-        content: [{ type: "text", text: `'${address}' 위치 정보를 UI 카드로 표시합니다. (${title || '제목 없음'})` }],
-        structuredContent: { address, title, domain: WIDGET_DOMAIN || "http://localhost:3000" },
+        content: [{ type: "text", text: summaryText }],
+        structuredContent: { 
+          addresses: targetAddresses, 
+          title, 
+          searchPattern: searchPattern || {},
+          stats,
+          domain: WIDGET_DOMAIN || "http://localhost:3000" 
+        },
         _meta: {
           "openai/outputTemplate": "ui://widget/map-ui.html"
         }

@@ -17,8 +17,7 @@ body {
 }
 
 body {
-  /* 외곽 여백: 라운딩/그림자가 잘리지 않도록 */
-  padding: 10px !important;
+  padding: 0 !important;
 }
 
 /*

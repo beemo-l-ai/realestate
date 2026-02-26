@@ -101,18 +101,26 @@ const scoreCandidate = (candidate, variants, legalDong) => {
 
 const PORT = Number(process.env.PORT || 3000);
 const APP_VERSION = "0.1.1";
-const WIDGET_DOMAIN = process.env.WIDGET_DOMAIN;
+const WIDGET_DOMAIN = process.env.WIDGET_DOMAIN || `http://localhost:${PORT}`;
 const KAKAO_MAP_APP_KEY = process.env.KAKAO_MAP_APP_KEY;
 
 const KAKAO_CSP = {
   connectDomains: [],
-  resourceDomains: [],
-  frameDomains: [
-    ...(WIDGET_DOMAIN ? [WIDGET_DOMAIN] : []),
+  resourceDomains: [
     "https://dapi.kakao.com",
-    "https://map.kakao.com",
-    "https://*.daumcdn.net"
+    "https://*.daumcdn.net",
+    "https://map.kakao.com"
+  ],
+  frameDomains: [
+    WIDGET_DOMAIN,
+    "https://map.kakao.com"
   ]
+};
+
+const DEFAULT_CSP = {
+  connectDomains: [],
+  resourceDomains: [],
+  frameDomains: []
 };
 
 function createRealestateServer() {
@@ -197,7 +205,8 @@ window.addEventListener("openai:set_globals", (event) => {
 </html>`,
           _meta: {
             ui: {
-              ...(WIDGET_DOMAIN ? { domain: WIDGET_DOMAIN } : {}),
+              domain: WIDGET_DOMAIN,
+              csp: DEFAULT_CSP
             }
           }
         }
@@ -218,7 +227,7 @@ window.addEventListener("openai:set_globals", (event) => {
           text: readFileSync(path.join(PUBLIC_DIR, "map-ui.html"), "utf-8"),
           _meta: {
             ui: {
-              ...(WIDGET_DOMAIN ? { domain: WIDGET_DOMAIN } : {}),
+              domain: WIDGET_DOMAIN,
               csp: KAKAO_CSP
             }
           }
@@ -240,7 +249,8 @@ window.addEventListener("openai:set_globals", (event) => {
           text: readFileSync(path.join(PUBLIC_DIR, "apartment_candidates.html"), "utf-8"),
           _meta: {
             ui: {
-              ...(WIDGET_DOMAIN ? { domain: WIDGET_DOMAIN } : {}),
+              domain: WIDGET_DOMAIN,
+              csp: DEFAULT_CSP
             }
           }
         }

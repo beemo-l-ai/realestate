@@ -7,51 +7,51 @@
   <title>아파트 후보 선택</title>
   <style>
     :root {
-      --bg: #f5f7fb;
-      --surface: #ffffff;
-      --line: #e3e8f2;
-      --line-strong: #d5ddea;
+      --bg: transparent;
+      --surface: rgba(255, 255, 255, 0.85);
+      --line: rgba(212, 222, 234, 0.7);
+      --line-strong: rgba(180, 195, 215, 0.9);
       --text: #0f172a;
-      --muted: #4b5565;
-      --accent: #0f766e;
-      --accent-soft: #e7f7f5;
-      --danger: #b91c1c;
-      --danger-soft: #fff2f2;
+      --muted: #4b5563;
+      --accent: #0ea5e9;
+      --accent-soft: rgba(224, 242, 254, 0.8);
       --radius-lg: 18px;
-      --radius-md: 14px;
-      --shadow: 0 14px 34px rgba(15, 23, 42, 0.08);
+      --radius-md: 12px;
+      --shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
-    html,
-    body {
+    html, body {
       margin: 0;
       width: 100%;
-      min-height: 100%;
+      height: 100%;
       background: var(--bg);
       color: var(--text);
-      font-family: "Pretendard", "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Pretendard", "Noto Sans KR", sans-serif;
+      overflow: hidden;
     }
 
-    body {
-      padding: 14px;
-    }
-
-    .card {
+    #root {
+      width: 100%;
+      height: 100%;
       background: var(--surface);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
       border: 1px solid var(--line);
-      border-radius: var(--radius-lg);
+      /* 상단 라운딩 제거, 하단만 라운딩 처리 */
+      border-radius: 0 0 var(--radius-lg) var(--radius-lg);
       box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
       overflow: hidden;
     }
 
     .header {
-      padding: 16px 16px 12px;
+      padding: 14px 16px 10px;
       border-bottom: 1px solid var(--line);
-      background: linear-gradient(180deg, #ffffff 0%, #fafcff 100%);
+      background: rgba(248, 251, 255, 0.6);
+      flex-shrink: 0;
     }
 
     .title-row {
@@ -63,166 +63,117 @@
 
     h1 {
       margin: 0;
-      font-size: 17px;
-      line-height: 1.2;
+      font-size: 15px;
+      font-weight: 700;
       letter-spacing: -0.02em;
     }
 
     .count {
-      font-size: 12px;
+      font-size: 11px;
+      font-weight: 600;
       color: var(--muted);
+      background: rgba(255, 255, 255, 0.5);
       border: 1px solid var(--line);
-      background: #f8faff;
-      border-radius: 999px;
-      padding: 4px 8px;
-      white-space: nowrap;
+      border-radius: 6px;
+      padding: 2px 6px;
     }
 
     .hint {
-      margin: 8px 0 0;
-      font-size: 13px;
+      margin: 4px 0 0;
+      font-size: 12px;
       color: var(--muted);
-      line-height: 1.45;
+      line-height: 1.4;
     }
 
     .body {
       padding: 12px;
+      flex: 1;
+      overflow-y: auto;
       display: grid;
-      gap: 10px;
+      gap: 8px;
     }
 
-    .skeleton {
-      display: grid;
-      gap: 9px;
-    }
-
+    /* Skeleton Loading */
+    .skeleton { display: grid; gap: 8px; }
     .sk-item {
-      height: 62px;
+      height: 68px;
       border-radius: var(--radius-md);
-      border: 1px solid #ebf0f8;
-      background: linear-gradient(100deg, #edf2f9 20%, #f8fbff 50%, #edf2f9 80%);
-      background-size: 220% 100%;
-      animation: shimmer 1.2s ease-in-out infinite;
+      background: linear-gradient(100deg, rgba(237, 242, 249, 0.6) 20%, rgba(248, 251, 255, 0.8) 50%, rgba(237, 242, 249, 0.6) 80%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite linear;
     }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
-    @keyframes shimmer {
-      0% { background-position: 180% 0; }
-      100% { background-position: -40% 0; }
-    }
-
-    .list {
-      display: grid;
-      gap: 9px;
-    }
+    .list { display: grid; gap: 8px; }
 
     .item {
       width: 100%;
       text-align: left;
-      border: 1px solid var(--line-strong);
+      border: 1px solid var(--line);
       border-radius: var(--radius-md);
-      padding: 12px;
-      background: #fff;
+      padding: 12px 14px;
+      background: rgba(255, 255, 255, 0.5);
       cursor: pointer;
-      transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
-    }
-
-    .item:hover {
-      transform: translateY(-1px);
-      border-color: #9fb4d8;
-      box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
-    }
-
-    .item:disabled {
-      cursor: not-allowed;
-      opacity: 0.62;
-      box-shadow: none;
-      transform: none;
-    }
-
-    .name {
-      font-size: 14px;
-      font-weight: 700;
-      letter-spacing: -0.01em;
+      transition: all 0.2s ease;
       display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 999px;
-      background: #0ea5a0;
-      flex: 0 0 auto;
-    }
-
-    .sub {
-      margin-top: 7px;
-      font-size: 12px;
-      color: var(--muted);
-      display: flex;
-      flex-wrap: wrap;
+      flex-direction: column;
       gap: 6px;
     }
 
-    .chip {
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      padding: 2px 8px;
-      background: #f8fafe;
+    .item:hover {
+      background: #ffffff;
+      border-color: var(--accent);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(14, 165, 233, 0.1);
     }
 
-    .alias {
-      margin-top: 7px;
-      font-size: 12px;
-      color: #155e75;
-      background: #edfaff;
-      border: 1px solid #d2f2ff;
-      border-radius: 10px;
-      padding: 5px 8px;
-    }
+    .item:active { background: var(--accent-soft); transform: translateY(0); }
+    .item:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .name-row { display: flex; align-items: center; gap: 8px; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+    .name { font-size: 14px; font-weight: 700; color: var(--text); }
+
+    .sub { display: flex; flex-wrap: wrap; gap: 5px; }
+    .chip { font-size: 11px; color: var(--muted); background: rgba(255, 255, 255, 0.4); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
+    .alias { font-size: 11px; color: #0284c7; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 4px; padding: 2px 6px; }
 
     .status {
-      border: 1px solid #bde7e2;
-      background: var(--accent-soft);
-      color: #0f5132;
-      border-radius: 12px;
-      padding: 9px 10px;
+      padding: 10px;
+      border-radius: var(--radius-md);
       font-size: 12px;
-      line-height: 1.35;
+      text-align: center;
+      background: rgba(248, 251, 255, 0.5);
+      border: 1px solid var(--line);
     }
+    .status.empty { color: #ef4444; background: rgba(254, 226, 226, 0.5); border-color: rgba(254, 202, 202, 0.5); }
 
-    .status.empty {
-      border-color: #ffd6d6;
-      background: var(--danger-soft);
-      color: var(--danger);
-    }
+    .hidden { display: none !important; }
 
-    .hidden {
-      display: none !important;
-    }
+    /* Scrollbar */
+    .body::-webkit-scrollbar { width: 4px; }
+    .body::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.1); border-radius: 10px; }
   </style>
 </head>
 
 <body>
-  <div class="card">
+  <div id="root">
     <div class="header">
       <div class="title-row">
-        <h1>후보 단지 선택</h1>
-        <span id="count" class="count">검색 중</span>
+        <h1>단지 선택</h1>
+        <span id="count" class="count">찾는 중...</span>
       </div>
-      <p class="hint">단지를 선택하면 이전 요청(시세/추이 조회)을 선택한 단지 기준으로 바로 이어서 실행합니다.</p>
+      <p class="hint">단지를 선택하면 해당 정보로 조회를 바로 재개합니다.</p>
     </div>
 
     <div class="body">
-      <div id="loading" class="skeleton" aria-live="polite">
+      <div id="loading" class="skeleton">
         <div class="sk-item"></div>
         <div class="sk-item"></div>
         <div class="sk-item"></div>
       </div>
-
       <div id="list" class="list hidden"></div>
-      <div id="status" class="status hidden" aria-live="polite"></div>
+      <div id="status" class="status hidden"></div>
     </div>
   </div>
 
@@ -232,78 +183,54 @@
     const statusEl = document.getElementById('status');
     const countEl = document.getElementById('count');
 
-    function escapeHtml(value) {
-      return String(value || "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/\"/g, "&quot;")
-        .replace(/'/g, "&#039;");
+    function escapeHtml(v) {
+      return String(v || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
     }
 
-    function setStatus(message, type) {
-      if (!message) {
-        statusEl.className = 'status hidden';
-        statusEl.textContent = '';
-        return;
-      }
-
-      statusEl.className = `status${type === 'empty' ? ' empty' : ''}`;
-      statusEl.textContent = message;
-    }
-
-    function setDisabled(disabled) {
-      const buttons = listEl.querySelectorAll('button.item');
-      buttons.forEach((btn) => { btn.disabled = disabled; });
-    }
-
-    async function triggerAutoContinue(item) {
-      const followupText = `${item.legalDong || ''} ${item.apartmentName || ''} 기준으로 방금 전 요청을 바로 계속 진행해줘.`.trim();
-      try {
-        if (typeof window?.openai?.sendFollowUpMessage === 'function') {
-          await window.openai.sendFollowUpMessage(followupText);
-          return true;
-        }
-
-        if (typeof window?.openai?.setInputText === 'function' && typeof window?.openai?.submitInput === 'function') {
-          await window.openai.setInputText(followupText);
-          await window.openai.submitInput();
-          return true;
-        }
-      } catch (err) {
-        setStatus(`자동 후속 실행 실패: ${err?.message || err}`, 'empty');
-      }
-      return false;
+    function setStatus(msg, type) {
+      if (!msg) { statusEl.classList.add('hidden'); return; }
+      statusEl.className = `status ${type === 'empty' ? 'empty' : ''}`;
+      statusEl.textContent = msg;
+      statusEl.classList.remove('hidden');
     }
 
     async function selectCandidate(item) {
-      const selectedText = `${item.legalDong || ''} ${item.apartmentName || ''}`.trim() || '선택된 단지';
-      setStatus(`선택 반영 중: ${selectedText}`);
-      setDisabled(true);
+      const selectedText = `${item.legalDong || ''} ${item.apartmentName || ''}`.trim();
+      setStatus(`${selectedText} 선택됨...`, 'info');
+      
+      const buttons = listEl.querySelectorAll('button.item');
+      buttons.forEach(btn => btn.disabled = true);
 
       try {
-        if (!window?.openai?.callTool) {
-          setStatus(`자동 전달을 지원하지 않아 '${selectedText}'를 채팅으로 입력해 주세요.`, 'empty');
-          return;
+        if (window?.openai?.callTool) {
+          await window.openai.callTool('select_apartment_candidate', {
+            selectedText,
+            apartmentName: item.apartmentName || selectedText,
+            legalDong: item.legalDong || '',
+            districtCode: item.districtCode || ''
+          });
         }
 
-        await window.openai.callTool('select_apartment_candidate', {
-          selectedText,
-          apartmentName: item.apartmentName || selectedText,
-          legalDong: item.legalDong || '',
-          districtCode: item.districtCode || ''
-        });
+        const followupText = `${selectedText} 단지로 선택했어. 방금 전 요청을 이 단지 기준으로 바로 계속 진행해줘.`.trim();
+        let autoTriggered = false;
 
-        const autoTriggered = await triggerAutoContinue(item);
+        if (typeof window?.openai?.sendFollowUpMessage === 'function') {
+          await window.openai.sendFollowUpMessage(followupText);
+          autoTriggered = true;
+        } else if (typeof window?.openai?.setInputText === 'function' && typeof window?.openai?.submitInput === 'function') {
+          await window.openai.setInputText(followupText);
+          await window.openai.submitInput();
+          autoTriggered = true;
+        }
+        
         if (autoTriggered) {
-          setStatus(`선택 완료: ${selectedText} · 이전 요청을 자동으로 이어서 실행했습니다.`);
+          setStatus('선택 완료! 조회를 다시 시작합니다.');
         } else {
-          setStatus(`선택 완료: ${selectedText} · 후속 실행이 자동으로 되지 않으면 채팅창에 '계속 진행해줘'라고 입력해 주세요.`);
+          setStatus('선택되었습니다. 채팅창에 "계속 진행해줘"라고 입력해 주세요.');
         }
       } catch (err) {
-        setStatus(`선택 전달 실패: ${err?.message || err}`, 'empty');
-      } finally {
-        setDisabled(false);
+        setStatus('전달 오류: ' + err.message, 'empty');
+        buttons.forEach(btn => btn.disabled = false);
       }
     }
 
@@ -311,72 +238,55 @@
       loadingEl.classList.add('hidden');
       listEl.classList.remove('hidden');
 
-      if (!Array.isArray(candidates) || candidates.length === 0) {
-        countEl.textContent = '후보 0개';
+      if (!candidates?.length) {
+        countEl.textContent = '0개';
         listEl.innerHTML = '';
-        setStatus('후보를 찾지 못했습니다. 지역(예: 정자동/분당구)까지 함께 입력해 주세요.', 'empty');
+        setStatus('일치하는 단지가 없습니다. 지역명을 포함해 보세요.', 'empty');
         return;
       }
 
-      countEl.textContent = `후보 ${candidates.length}개`;
+      countEl.textContent = `${candidates.length}개 후보`;
       listEl.innerHTML = candidates.map((item, idx) => {
-        const name = `${item.legalDong || ''} ${item.apartmentName || ''}`.trim() || `후보 ${idx + 1}`;
-        const district = item.districtCode ? `시군구코드 ${item.districtCode}` : '시군구코드 없음';
-        const trades = Number(item.totalTrades || 0).toLocaleString('ko-KR');
+        const name = `${item.legalDong || ''} ${item.apartmentName || ''}`.trim();
+        const trades = Number(item.totalTrades || 0).toLocaleString();
         const aliases = Array.isArray(item.aliases) ? item.aliases.slice(0, 2) : [];
 
         return `
           <button class="item" type="button" data-index="${idx}">
-            <div class="name"><span class="dot" aria-hidden="true"></span>${escapeHtml(name)}</div>
-            <div class="sub">
-              <span class="chip">${escapeHtml(district)}</span>
-              <span class="chip">누적 거래 ${escapeHtml(trades)}건</span>
+            <div class="name-row">
+              <span class="dot"></span>
+              <span class="name">${escapeHtml(name)}</span>
             </div>
-            ${aliases.length ? `<div class="alias">유사명: ${escapeHtml(aliases.join(', '))}</div>` : ''}
+            <div class="sub">
+              <span class="chip">${escapeHtml(item.districtCode || '')}</span>
+              <span class="chip">실거래 ${escapeHtml(trades)}건</span>
+              ${aliases.map(a => `<span class="alias">#${escapeHtml(a)}</span>`).join('')}
+            </div>
           </button>
         `;
       }).join('');
 
-      const hintByMode = {
-        regional: '정확 매칭이 없어 같은 지역 내 상위 유사 단지를 보여줍니다.',
-        global: '정확 매칭이 없어 전체 데이터에서 대표 유사 단지를 보여줍니다.'
-      };
-      setStatus(hintByMode[fallbackMode] || '후보를 선택하면 즉시 후속 조회를 진행합니다.');
+      const modes = { regional: '지역 내 주요 단지입니다.', global: '유사한 이름의 단지들입니다.' };
+      setStatus(modes[fallbackMode] || '목록에서 단지를 선택하세요.');
 
       listEl.querySelectorAll('button.item').forEach((button) => {
         button.addEventListener('click', () => {
-          const index = Number(button.getAttribute('data-index'));
-          const item = candidates[index];
+          const item = candidates[Number(button.getAttribute('data-index'))];
           if (item) selectCandidate(item);
         });
       });
     }
 
     function renderFromPayload(toolOutput) {
-      if (!toolOutput) return;
-      const data = toolOutput.structuredContent || toolOutput;
-      renderCandidates(data?.candidates || [], data?.fallbackMode || 'none');
+      const data = toolOutput?.structuredContent || toolOutput;
+      if (data?.candidates) renderCandidates(data.candidates, data.fallbackMode);
     }
 
-    try {
-      if (window?.openai?.toolOutput) {
-        renderFromPayload(window.openai.toolOutput);
-      }
-    } catch (e) { }
-
-    window.addEventListener('message', (event) => {
-      if (event.source !== window.parent) return;
-      const message = event.data;
-      if (!message || message.jsonrpc !== '2.0') return;
-      if (message.method === 'ui/notifications/tool-result') {
-        renderFromPayload(message.params);
-      }
+    try { if (window?.openai?.toolOutput) renderFromPayload(window.openai.toolOutput); } catch (e) {}
+    window.addEventListener('message', (e) => {
+      if (e.source === window.parent && e.data?.method === 'ui/notifications/tool-result') renderFromPayload(e.data.params);
     });
-
-    window.addEventListener('openai:set_globals', (event) => {
-      renderFromPayload(event.detail?.globals?.toolOutput);
-    });
+    window.addEventListener('openai:set_globals', (e) => renderFromPayload(e.detail?.globals?.toolOutput));
   </script>
 </body>
-
 </html>

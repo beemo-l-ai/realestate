@@ -109,13 +109,27 @@ const withWidgetDomain = (uiMeta = {}) => ({
   ...(WIDGET_DOMAIN ? { domain: WIDGET_DOMAIN } : {}),
 });
 
-const buildWidgetMeta = (csp = undefined) => ({
-  ui: withWidgetDomain({
-    ...(csp ? { csp } : {}),
-  }),
-  ...(WIDGET_DOMAIN ? { "openai/widgetDomain": WIDGET_DOMAIN } : {}),
-  ...(csp ? { "openai/widgetCSP": csp } : {}),
-});
+const buildWidgetMeta = (csp = undefined, outputTemplate = undefined) => {
+  const finalCsp = csp || {
+    connectDomains: [],
+    resourceDomains: [],
+    frameDomains: [
+      ...(WIDGET_DOMAIN ? [WIDGET_DOMAIN] : []),
+      "https://dapi.kakao.com",
+      "https://map.kakao.com",
+      "https://*.daumcdn.net"
+    ]
+  };
+  
+  return {
+    ui: withWidgetDomain({
+      csp: finalCsp,
+    }),
+    ...(WIDGET_DOMAIN ? { "openai/widgetDomain": WIDGET_DOMAIN } : {}),
+    "openai/widgetCSP": finalCsp,
+    ...(outputTemplate ? { "openai/outputTemplate": outputTemplate } : {}),
+  };
+};
 
 function createRealestateServer() {
   const server = new McpServer({
@@ -352,9 +366,7 @@ window.addEventListener("openai:set_globals", (event) => {
       return {
         content: [{ type: "text", text: `${city} ${type} 최근 실거래 ${listings.length}건을 찾았습니다.` }],
         structuredContent: { listings },
-        _meta: {
-          "openai/outputTemplate": "ui://widget/listings-v2.html"
-        }
+        _meta: buildWidgetMeta(undefined, "ui://widget/listings-v2.html")
       };
     }
   );
@@ -526,9 +538,7 @@ UI에서 후보를 클릭하면 \`select_apartment_candidate\` 도구를 통해 
         return {
           content: [{ type: "text", text: promptText }],
           structuredContent: { candidates, keyword: fallbackMode === "none" ? keyword : (legalDong || districtCode || keyword), fallbackMode },
-          _meta: {
-            "openai/outputTemplate": "ui://widget/apartment_candidates.html"
-          }
+          _meta: buildWidgetMeta(undefined, "ui://widget/apartment_candidates.html")
         };
       } catch (err) {
         return {
@@ -605,9 +615,7 @@ UI에서 후보를 클릭하면 \`select_apartment_candidate\` 도구를 통해 
       return {
         content: [{ type: "text", text: `'${address}' 위치 정보를 UI 카드로 표시합니다. (${title || '제목 없음'})` }],
         structuredContent: { address, title, domain: WIDGET_DOMAIN || "http://localhost:3000" },
-        _meta: {
-          "openai/outputTemplate": "ui://widget/map-ui.html"
-        }
+        _meta: buildWidgetMeta(undefined, "ui://widget/map-ui.html")
       };
     }
   );

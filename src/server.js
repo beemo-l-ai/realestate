@@ -251,11 +251,11 @@ window.addEventListener("openai:set_globals", (event) => {
   server.registerTool(
     "search_listings",
     {
-      title: "매물 검색 (UI용 샘플)",
-      description: "주의: 통계나 건수 조회 목적이 아닙니다!! 오직 화면에 보여줄 소수의 '최근 실거래 샘플 5개'만 반환합니다. 전체 건수를 묻는 질문에는 절대 이 도구를 쓰지 말고 'query_realestate_db' 도구를 사용하세요.",
+      title: "실거래 사례 샘플 조회 (단순 참고용)",
+      description: "주의: 시세 추이, 거래 건수, 통계 조회용이 아닙니다! 오직 화면에 보여줄 개별 실거래 사례 샘플 5개만 반환합니다. 시세나 통계를 묻는 질문에는 절대 이 도구를 쓰지 말고 반드시 'query_realestate_db'를 사용하세요.",
       inputSchema: {
         city: z.string().describe("예: 서울, 부산"),
-        type: z.enum(["월세", "전세", "매매"]).default("월세")
+        type: z.enum(["월세", "전세", "매매"]).default("매매")
       },
       _meta: {
         ui: { resourceUri: "ui://widget/listings-v2.html" },
@@ -325,38 +325,25 @@ window.addEventListener("openai:set_globals", (event) => {
   server.registerTool(
     "query_realestate_db",
     {
-      title: "지역 및 월별 부동산 상세 쿼리 (필수 도구)",
-      description: `주의! 거래 건수, 통계, 다중 조건 조회 등을 묻는 모든 질문에는 반드시 이 도구를 사용하여 Raw SQL(SELECT)을 실행해야만 정확한 답을 할 수 있습니다. search_listings 도구는 샘플만 반환하므로 절대 사용하지 마세요.
+      title: "부동산 통계 및 시세 상세 쿼리 (핵심 도구)",
+      description: `부동산 관련 모든 통계(거래건수, 평균가, 최고가 등)와 시세 추이 질문에는 반드시 이 도구를 사용해야 정확한 데이터를 얻을 수 있습니다. 
 
-사용 가능한 테이블 및 스키마 정보:
+사용 가능한 주요 테이블 및 스키마 정보:
 
 1. re_sale_monthly_aggregates (매매 월별 통계)
-컬럼명: id, region(예: 서울), district_code(예: 11680), apartment_name, year_month(예: 202401), avg_price_krw, median_price_krw, min_price_krw, max_price_krw, tx_count(거래건수)
-* 구 단위 집계 데이터의 경우 apartment_name 컬럼 값이 NULL 입니다.
-예시 질문: "서울 24년 1월 매매(매매) 거래 건수 알려줘"
-예시 쿼리: SELECT SUM(tx_count) FROM re_sale_monthly_aggregates WHERE region = '서울' AND year_month = '202401' AND apartment_name IS NULL
+컬럼명: id, region, district_code, apartment_name, year_month, avg_price_krw, median_price_krw, min_price_krw, max_price_krw, tx_count
+* 구 단위 집계 시 apartment_name IS NULL.
 
 2. re_rent_monthly_aggregates (전/월세 월별 통계)
-컬럼명: id, region, district_code, apartment_name, rent_type('JEONSE' 또는 'WOLSE'), year_month, avg_deposit_krw, avg_monthly_rent_krw, tx_count
-* 구 단위 집계 시 apartment_name IS NULL 포함.
-예시 질문: "서울 24년 1월 전월세 거래 건수 확인해줘"
-예시 쿼리: SELECT SUM(tx_count) FROM re_rent_monthly_aggregates WHERE region = '서울' AND year_month = '202401' AND apartment_name IS NULL
+컬럼명: id, region, district_code, apartment_name, rent_type('JEONSE'/'WOLSE'), year_month, avg_deposit_krw, avg_monthly_rent_krw, tx_count
 
-3. re_sale_transactions (매매 실거래 상세 내역)
-컬럼명: id, region, district_code, legal_dong(법정동), apartment_name, area_m2(면적), price_krw(가격), floor(층), traded_at(거래일, DATE 형식)
-
-4. re_rent_transactions (전/월세 실거래 상세 내역)
-컬럼명: id, region, district_code, legal_dong, apartment_name, rent_type, area_m2, deposit_krw, monthly_rent_krw, floor, contracted_at
+3. re_sale_transactions (매매 상세) / 4. re_rent_transactions (전월세 상세)
 
 지침:
-- 구 코드는 제공된 district_map 등을 통해 알 수 있다면 district_code='11680' 형태로 쓰시고, 모른다면 지역명은 '서울' 같이 풀네임(region)을 사용하세요.
-- 합산 통계(예: 총 거래 발생 건수)를 원할 경우 반드시 \`SELECT SUM(tx_count)\` 처럼 집계 함수를 포함한 SQL을 작성하세요.
-- SQL 문에는 무조건 SELECT 쿼리만 작성 가능합니다.
-- 무언가 위치나 매물 정보를 알려줄 때는 답변 텍스트만 주지 말고 반드시 \`get_location_ui\` 도구를 함께 호출하여 UI 카드를 표시하세요.
-- 사용자가 "해당 지역이 어디야?" 등 위치를 묻는 경우에도 무조건 \`get_location_ui\`을 호출하세요.
-- [매우 중요] 사용자가 질문한 아파트 이름으로 쿼리했을 때 결과가 0건이라면, DB에 저장된 아파트 이름과 다를 수 있습니다. (예: 사용자는 "청송마을 화인"이라고 했으나 DB에는 "유천화인"). 이 경우 절대로 바로 "없습니다"라고 답하지 마시고, 반드시 'search_apartment_candidates' (또는 'search_apartment_metadata') 도구를 이어서 호출해 비슷한 이름의 아파트를 찾아 사용자에게 질문하세요.`,
+- 사용자가 "시세 알려줘", "거래량 어때?", "최근 최고가 얼마야?" 라고 물으면 이 도구로 SQL을 실행하세요.
+- 만약 쿼리 결과가 0건이라면, 아파트 이름이 DB와 다를 수 있으므로 즉시 'search_apartment_candidates' 도구를 호출하여 정확한 이름을 확인받으세요.`,
       inputSchema: {
-        sqlQuery: z.string().describe("실행할 통계/건수 추출용 Oracle SQL SELECT 구문 (예: SELECT SUM(tx_count) FROM ...)")
+        sqlQuery: z.string().describe("실행할 통계/건수 추출용 Oracle SQL SELECT 구문")
       },
       _meta: {
         "openai/toolInvocation/invoking": "부동산 고급 쿼리 분석 중...",

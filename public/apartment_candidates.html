@@ -5,53 +5,102 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>아파트 후보 선택</title>
-  <link rel="stylesheet" href="global-ui.css">
   <style>
+    /* ===== global-ui (인라인) ===== */
     :root {
-      --bg: transparent;
-      --surface: rgba(255, 255, 255, 0.85);
+      --radius-main: 18px;
+      --card-shadow: 0 10px 30px rgba(15, 23, 42, 0.16);
+      --card-border: 1px solid rgba(203, 213, 225, 0.8);
       --line: rgba(212, 222, 234, 0.7);
-      --line-strong: rgba(180, 195, 215, 0.9);
       --text: #0f172a;
       --muted: #4b5563;
       --accent: #0ea5e9;
       --accent-soft: rgba(224, 242, 254, 0.8);
-      --radius-lg: 18px;
       --radius-md: 12px;
-      --shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
     }
 
-    * {
+    *,
+    *::before,
+    *::after {
       box-sizing: border-box;
     }
 
     html,
     body {
-      margin: 0;
-      width: 100%;
-      height: 100%;
-      background: transparent;
-      /* 투명 배경 유지 */
-      color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Pretendard", "Noto Sans KR", sans-serif;
-      overflow: hidden;
+      background: transparent !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      width: 100% !important;
+      font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
     }
 
-    /* widget-root (global-ui.css) 의 height:auto 에 맞춰 내부 레이아웃 구성 */
+    body {
+      padding: 10px !important;
+    }
 
-    #root {
-      background: var(--surface);
+    .widget-root {
+      margin: 0;
+      width: 100%;
+      border-radius: var(--radius-main);
+      border: var(--card-border);
+      box-shadow: var(--card-shadow);
+      background: #ffffff;
+      overflow: hidden;
       display: flex;
       flex-direction: column;
-      max-height: 400px;
-      /* 최대 높이 제한 */
+      position: relative;
+      box-sizing: border-box;
+    }
+
+    /* 로컬 테스트 오버레이 */
+    #dev-test-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, .05);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      pointer-events: none;
+    }
+
+    #dev-test-panel {
+      pointer-events: auto;
+      background: #1e293b;
+      color: #fff;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 11px;
+      box-shadow: 0 20px 25px -5px rgb(0 0 0/.1);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    #dev-test-panel button {
+      background: #384455;
+      color: #fff;
+      border: none;
+      padding: 6px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    #dev-test-panel button:hover {
+      background: #475569;
+    }
+
+    /* ===== 위젯 고유 스타일 ===== */
+    #root {
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
     }
 
     .header {
-      padding: 14px 16px 10px;
+      padding: 14px 16px 12px;
       border-bottom: 1px solid var(--line);
-      background: rgba(248, 251, 255, 0.6);
-      border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+      background: #f8fbff;
       flex-shrink: 0;
     }
 
@@ -73,7 +122,7 @@
       font-size: 11px;
       font-weight: 600;
       color: var(--muted);
-      background: rgba(255, 255, 255, 0.5);
+      background: rgba(255, 255, 255, 0.8);
       border: 1px solid var(--line);
       border-radius: 6px;
       padding: 2px 6px;
@@ -92,9 +141,9 @@
       overflow-y: auto;
       display: grid;
       gap: 8px;
+      background: #f8fafc;
     }
 
-    /* Skeleton Loading */
     .skeleton {
       display: grid;
       gap: 8px;
@@ -103,18 +152,18 @@
     .sk-item {
       height: 68px;
       border-radius: var(--radius-md);
-      background: linear-gradient(100deg, rgba(237, 242, 249, 0.6) 20%, rgba(248, 251, 255, 0.8) 50%, rgba(237, 242, 249, 0.6) 80%);
+      background: linear-gradient(100deg, rgba(237, 242, 249, .6) 20%, rgba(248, 251, 255, .8) 50%, rgba(237, 242, 249, .6) 80%);
       background-size: 200% 100%;
       animation: shimmer 1.5s infinite linear;
     }
 
     @keyframes shimmer {
       0% {
-        background-position: 200% 0;
+        background-position: 200% 0
       }
 
       100% {
-        background-position: -200% 0;
+        background-position: -200% 0
       }
     }
 
@@ -129,30 +178,18 @@
       border: 1px solid var(--line);
       border-radius: var(--radius-md);
       padding: 12px 14px;
-      background: rgba(255, 255, 255, 0.5);
+      background: #ffffff;
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: all .2s ease;
       display: flex;
       flex-direction: column;
       gap: 6px;
     }
 
     .item:hover {
-      background: #ffffff;
       border-color: var(--accent);
+      background: #f0f9ff;
       transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(14, 165, 233, 0.1);
-    }
-
-    .item:active {
-      background: var(--accent-soft);
-      transform: translateY(0);
-    }
-
-    .item:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-      transform: none;
     }
 
     .name-row {
@@ -166,7 +203,6 @@
       height: 7px;
       border-radius: 50%;
       background: var(--accent);
-      box-shadow: 0 0 6px var(--accent);
     }
 
     .name {
@@ -184,8 +220,7 @@
     .chip {
       font-size: 11px;
       color: var(--muted);
-      background: rgba(255, 255, 255, 0.4);
-      border: 1px solid var(--line);
+      background: #f1f5f9;
       border-radius: 4px;
       padding: 1px 5px;
     }
@@ -193,60 +228,60 @@
     .alias {
       font-size: 11px;
       color: #0284c7;
-      background: #f0f9ff;
-      border: 1px solid #bae6fd;
+      background: #e0f2fe;
       border-radius: 4px;
-      padding: 2px 6px;
+      padding: 1px 5px;
     }
 
     .status {
-      padding: 10px;
-      border-radius: var(--radius-md);
+      flex-shrink: 0;
+      padding: 10px 14px;
       font-size: 12px;
       text-align: center;
-      background: rgba(248, 251, 255, 0.5);
-      border: 1px solid var(--line);
+      background: #f8fbff;
+      border-top: 1px solid var(--line);
+      color: #4b5563;
     }
 
     .status.empty {
       color: #ef4444;
-      background: rgba(254, 226, 226, 0.5);
-      border-color: rgba(254, 202, 202, 0.5);
+      background: #fef2f2;
     }
 
     .hidden {
       display: none !important;
     }
 
-    /* Scrollbar */
     .body::-webkit-scrollbar {
       width: 4px;
     }
 
     .body::-webkit-scrollbar-thumb {
-      background: rgba(0, 0, 0, 0.1);
+      background: rgba(0, 0, 0, .1);
       border-radius: 10px;
     }
   </style>
 </head>
 
 <body>
-  <div id="root" class="widget-root">
-    <div class="header">
-      <div class="title-row">
-        <h1>단지 선택</h1>
-        <span id="count" class="count">찾는 중...</span>
+  <div class="widget-root">
+    <div id="root">
+      <div class="header">
+        <div class="title-row">
+          <h1>단지 선택</h1>
+          <span id="count" class="count">찾는 중...</span>
+        </div>
+        <p class="hint">단지를 선택하면 해당 정보로 조회를 바로 재개합니다.</p>
       </div>
-      <p class="hint">단지를 선택하면 해당 정보로 조회를 바로 재개합니다.</p>
-    </div>
 
-    <div class="body">
-      <div id="loading" class="skeleton">
-        <div class="sk-item"></div>
-        <div class="sk-item"></div>
-        <div class="sk-item"></div>
+      <div class="body">
+        <div id="loading" class="skeleton">
+          <div class="sk-item"></div>
+          <div class="sk-item"></div>
+        </div>
+        <div id="list" class="list hidden"></div>
       </div>
-      <div id="list" class="list hidden"></div>
+
       <div id="status" class="status hidden"></div>
     </div>
   </div>
@@ -270,37 +305,24 @@
 
     async function selectCandidate(item) {
       const selectedText = `${item.legalDong || ''} ${item.apartmentName || ''}`.trim();
-      setStatus(`${selectedText} 선택됨...`, 'info');
+      setStatus(`${selectedText} 선택됨. 조회를 재개합니다...`, 'info');
 
       const buttons = listEl.querySelectorAll('button.item');
       buttons.forEach(btn => btn.disabled = true);
 
       try {
-        if (window?.openai?.callTool) {
-          await window.openai.callTool('select_apartment_candidate', {
-            selectedText,
-            apartmentName: item.apartmentName || selectedText,
-            legalDong: item.legalDong || '',
-            districtCode: item.districtCode || ''
-          });
-        }
-
         const followupText = `${selectedText} 단지로 선택했어. 방금 전 요청을 이 단지 기준으로 바로 계속 진행해줘.`.trim();
-        let autoTriggered = false;
 
+        // sendFollowUpMessage: SDK는 { prompt } 객체를 요구함 (문자열 직접 전달 시 'No prompt provided' 에러)
         if (typeof window?.openai?.sendFollowUpMessage === 'function') {
-          await window.openai.sendFollowUpMessage(followupText);
-          autoTriggered = true;
-        } else if (typeof window?.openai?.setInputText === 'function' && typeof window?.openai?.submitInput === 'function') {
-          await window.openai.setInputText(followupText);
-          await window.openai.submitInput();
-          autoTriggered = true;
+          await window.openai.sendFollowUpMessage({ prompt: followupText });
         }
 
-        if (autoTriggered) {
-          setStatus('선택 완료! 조회를 다시 시작합니다.');
-        } else {
-          setStatus('선택되었습니다. 채팅창에 "계속 진행해줘"라고 입력해 주세요.');
+        setStatus('선택 완료! 채팅창을 확인해주세요.');
+
+        // --- Local Simulator logic ---
+        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+          alert(`[Simulator] ChatGPT에게 메시지 전달됨:\n"${followupText}"`);
         }
       } catch (err) {
         setStatus('전달 오류: ' + err.message, 'empty');
@@ -315,7 +337,7 @@
       if (!candidates?.length) {
         countEl.textContent = '0개';
         listEl.innerHTML = '';
-        setStatus('일치하는 단지가 없습니다. 지역명을 포함해 보세요.', 'empty');
+        setStatus('일치하는 단지가 없습니다.', 'empty');
         return;
       }
 
@@ -340,8 +362,7 @@
         `;
       }).join('');
 
-      const modes = { regional: '지역 내 주요 단지입니다.', global: '유사한 이름의 단지들입니다.' };
-      setStatus(modes[fallbackMode] || '목록에서 단지를 선택하세요.');
+      setStatus('목록에서 단지를 선택하세요.');
 
       listEl.querySelectorAll('button.item').forEach((button) => {
         button.addEventListener('click', () => {
@@ -351,16 +372,49 @@
       });
     }
 
-    function renderFromPayload(toolOutput) {
-      const data = toolOutput?.structuredContent || toolOutput;
+    function renderFromPayload(payload) {
+      const data = payload?.structuredContent || payload;
       if (data?.candidates) renderCandidates(data.candidates, data.fallbackMode);
     }
 
-    try { if (window?.openai?.toolOutput) renderFromPayload(window.openai.toolOutput); } catch (e) { }
-    window.addEventListener('message', (e) => {
-      if (e.source === window.parent && e.data?.method === 'ui/notifications/tool-result') renderFromPayload(e.data.params);
+    // --- Message Listeners ---
+    window.addEventListener('message', (event) => {
+      if (event.source !== window.parent) return;
+      const message = event.data;
+      if (message?.method === 'ui/notifications/tool-result') {
+        renderFromPayload(message.params);
+      }
     });
-    window.addEventListener('openai:set_globals', (e) => renderFromPayload(e.detail?.globals?.toolOutput));
+
+    // ChatGPT SDK: toolOutput가 스크립트 실행 후 설정될 수 있으므로 set_globals 이벤트도 수신
+    window.addEventListener('openai:set_globals', (event) => {
+      renderFromPayload(event.detail?.globals?.toolOutput);
+    }, { passive: true });
+
+    try { if (window?.openai?.toolOutput) renderFromPayload(window.openai.toolOutput); } catch (e) { }
+
+    // --- Local Dev Flow Simulator ---
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+      const devPanel = document.createElement('div');
+      devPanel.id = 'dev-test-overlay';
+      devPanel.innerHTML = `
+        <div id="dev-test-panel">
+          <b>🛠️ Local Candidate Test</b>
+          <button onclick="mockCandidates()">샘플 데이터 주입</button>
+        </div>
+      `;
+      document.body.appendChild(devPanel);
+
+      window.mockCandidates = () => {
+        renderFromPayload({
+          candidates: [
+            { apartmentName: "화인아파트", legalDong: "정자동", totalTrades: 150, districtCode: "41135" },
+            { apartmentName: "유천화인", legalDong: "금곡동", totalTrades: 80, districtCode: "41135" }
+          ],
+          fallbackMode: "none"
+        });
+      };
+    }
   </script>
 </body>
 

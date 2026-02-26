@@ -2,20 +2,93 @@
   --radius-main: 18px;
   --card-shadow: 0 10px 30px rgba(15, 23, 42, 0.16);
   --card-border: 1px solid rgba(203, 213, 225, 0.8);
-  --backdrop-blur: blur(12px);
+  --accent: #0ea5e9;
 }
 
-/* 모든 위젯 루트 컨테이너에 공통 적용되는 라운드 스타일 */
+/* ChatGPT Iframe 환경: html/body는 투명 컨테이너 역할 */
+html,
+body {
+  background: transparent !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+body {
+  /* 외곽 여백: 라운딩/그림자가 잘리지 않도록 */
+  padding: 10px !important;
+}
+
+/*
+ * 실제 카드 역할을 하는 래퍼 컨테이너
+ * ⚠ body가 아닌 내부 <div class="widget-root"> 에 적용해야
+ *   border-radius 와 background 가 정상 렌더링 됨
+ */
 .widget-root {
-  margin: 12px !important;
-  border-radius: var(--radius-main) !important;
-  overflow: hidden !important;
-  border: var(--card-border) !important;
-  box-shadow: var(--card-shadow) !important;
-  backdrop-filter: var(--backdrop-blur) !important;
-  -webkit-backdrop-filter: var(--backdrop-blur) !important;
-  /* 컨테이너 크기 조정 */
-  width: calc(100% - 24px) !important;
-  height: auto !important;
-  min-height: 100px;
+  margin: 0;
+  width: 100%;
+  border-radius: var(--radius-main);
+  border: var(--card-border);
+  box-shadow: var(--card-shadow);
+  background: #ffffff;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  box-sizing: border-box;
+}
+
+/* 하단 고정 상태 바 */
+.fixed-status {
+  flex-shrink: 0;
+  padding: 10px 14px;
+  background: #f8fbff;
+  border-top: 1px solid rgba(212, 222, 234, 0.8);
+  font-size: 12px;
+  text-align: center;
+  color: #4b5563;
+  z-index: 10;
+}
+
+/* 로컬 테스트용 오버레이 (Flow 시뮬레이션) */
+#dev-test-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+#dev-test-panel {
+  pointer-events: auto;
+  background: #1e293b;
+  color: white;
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#dev-test-panel button {
+  background: #384455;
+  color: white;
+  border: none;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+#dev-test-panel button:hover {
+  background: #475569;
 }

@@ -8,7 +8,7 @@ import path from "node:path";
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
+import { RESOURCE_MIME_TYPE, registerAppResource, registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { getLatestSaleTransactions, getLatestRentTransactions, executeSelectQuery, searchApartmentMetadata } from "./lib/store.js";
 import { DISTRICT_MAP } from "./lib/districts.js";
 
@@ -104,31 +104,15 @@ const APP_VERSION = "0.1.1";
 const WIDGET_DOMAIN = process.env.WIDGET_DOMAIN;
 const KAKAO_MAP_APP_KEY = process.env.KAKAO_MAP_APP_KEY;
 
-const withWidgetDomain = (uiMeta = {}) => ({
-  ...uiMeta,
-  ...(WIDGET_DOMAIN ? { domain: WIDGET_DOMAIN } : {}),
-});
-
-const buildWidgetMeta = (csp = undefined, outputTemplate = undefined) => {
-  const finalCsp = csp || {
-    connectDomains: [],
-    resourceDomains: [],
-    frameDomains: [
-      ...(WIDGET_DOMAIN ? [WIDGET_DOMAIN] : []),
-      "https://dapi.kakao.com",
-      "https://map.kakao.com",
-      "https://*.daumcdn.net"
-    ]
-  };
-  
-  return {
-    ui: withWidgetDomain({
-      csp: finalCsp,
-    }),
-    ...(WIDGET_DOMAIN ? { "openai/widgetDomain": WIDGET_DOMAIN } : {}),
-    "openai/widgetCSP": finalCsp,
-    ...(outputTemplate ? { "openai/outputTemplate": outputTemplate } : {}),
-  };
+const KAKAO_CSP = {
+  connectDomains: [],
+  resourceDomains: [],
+  frameDomains: [
+    ...(WIDGET_DOMAIN ? [WIDGET_DOMAIN] : []),
+    "https://dapi.kakao.com",
+    "https://map.kakao.com",
+    "https://*.daumcdn.net"
+  ]
 };
 
 function createRealestateServer() {
@@ -137,36 +121,27 @@ function createRealestateServer() {
     version: APP_VERSION
   });
 
-  server.registerResource(
+  registerAppResource(
+    server,
     "listings-widget",
     "ui://widget/listings-v2.html",
-    {
-      _meta: {
-        ...buildWidgetMeta({
-          connectDomains: [],
-          resourceDomains: [],
-          frameDomains: []
-        })
-      }
-    },
-    async () => {
-      console.log("[mcp] resources/read map-widget");
-      return {
-        contents: [
-          {
-            uri: "ui://widget/listings-v2.html",
-            mimeType: "text/html;profile=mcp-app",
-            text: `< !doctype html >
+    {},
+    async () => ({
+      contents: [
+        {
+          uri: "ui://widget/listings-v2.html",
+          mimeType: RESOURCE_MIME_TYPE,
+          text: `<!doctype html>
   <html lang="ko">
     <head>
       <meta charset="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1" />
       <title>매물 결과</title>
       <style>
-        body {font - family: ui-sans-serif, system-ui, sans-serif; margin: 0; padding: 12px; }
+        body {font-family: ui-sans-serif, system-ui, sans-serif; margin: 0; padding: 12px; }
         .card {border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; margin-bottom: 8px; }
-        .price {font - weight: 700; color: #111827; }
-        .title {font - weight: 500; margin-top: 4px; }
+        .price {font-weight: 700; color: #111827; }
+        .title {font-weight: 500; margin-top: 4px; }
         .meta {color: #6b7280; font-size: 13px; margin-top: 4px; }
       </style>
     </head>
@@ -197,14 +172,12 @@ function createRealestateServer() {
         }
       };
 
-// 1) Legacy Sync Data
 try {
   if (window?.openai?.toolOutput) {
     renderFromPayload(window.openai.toolOutput);
   }
 } catch (e) { }
 
-// 2) Async Tool-Result Event Listener (Legacy)
 window.addEventListener('message', (event) => {
   if (event.source !== window.parent) return;
   const message = event.data;
@@ -212,40 +185,29 @@ window.addEventListener('message', (event) => {
   if (message.method === 'ui/notifications/tool-result') {
     renderFromPayload(message.params);
   }
-});
+}, { passive: true });
 
-// 3) New Apps SDK Globals Listener
 window.addEventListener("openai:set_globals", (event) => {
   renderFromPayload(event.detail?.globals?.toolOutput);
-});
-    </script >
-  </body >
-</html > `,
-            _meta: {
-              ...buildWidgetMeta({
-                connectDomains: [],
-                resourceDomains: [],
-                frameDomains: []
-              })
+}, { passive: true });
+    </script>
+  </body>
+</html>`,
+          _meta: {
+            ui: {
+              ...(WIDGET_DOMAIN ? { domain: WIDGET_DOMAIN } : {}),
             }
           }
-        ]
-      };
-    }
+        }
+      ]
+    })
   );
 
-  server.registerResource(
+  registerAppResource(
+    server,
     "map-ui",
     "ui://widget/map-ui.html",
-    {
-      _meta: {
-        ...buildWidgetMeta({
-          connectDomains: [],
-          resourceDomains: [],
-          frameDomains: WIDGET_DOMAIN ? [WIDGET_DOMAIN] : []
-        })
-      }
-    },
+    {},
     async () => ({
       contents: [
         {
@@ -253,29 +215,21 @@ window.addEventListener("openai:set_globals", (event) => {
           mimeType: RESOURCE_MIME_TYPE,
           text: readFileSync(path.join(PUBLIC_DIR, "map-ui.html"), "utf-8"),
           _meta: {
-            ...buildWidgetMeta({
-              connectDomains: [],
-              resourceDomains: [],
-              frameDomains: WIDGET_DOMAIN ? [WIDGET_DOMAIN] : []
-            })
+            ui: {
+              ...(WIDGET_DOMAIN ? { domain: WIDGET_DOMAIN } : {}),
+              csp: KAKAO_CSP
+            }
           }
         }
       ]
     })
   );
 
-  server.registerResource(
+  registerAppResource(
+    server,
     "apartment-candidates-ui",
     "ui://widget/apartment_candidates.html",
-    {
-      _meta: {
-        ...buildWidgetMeta({
-          connectDomains: [],
-          resourceDomains: [],
-          frameDomains: []
-        })
-      }
-    },
+    {},
     async () => ({
       contents: [
         {
@@ -283,11 +237,9 @@ window.addEventListener("openai:set_globals", (event) => {
           mimeType: RESOURCE_MIME_TYPE,
           text: readFileSync(path.join(PUBLIC_DIR, "apartment_candidates.html"), "utf-8"),
           _meta: {
-            ...buildWidgetMeta({
-              connectDomains: [],
-              resourceDomains: [],
-              frameDomains: []
-            })
+            ui: {
+              ...(WIDGET_DOMAIN ? { domain: WIDGET_DOMAIN } : {}),
+            }
           }
         }
       ]
@@ -304,15 +256,10 @@ window.addEventListener("openai:set_globals", (event) => {
         type: z.enum(["월세", "전세", "매매"]).default("월세")
       },
       _meta: {
+        ui: { resourceUri: "ui://widget/listings-v2.html" },
         "openai/outputTemplate": "ui://widget/listings-v2.html",
         "openai/toolInvocation/invoking": "매물 조회 중...",
-        "openai/toolInvocation/invoked": "매물 조회 완료",
-        ...(WIDGET_DOMAIN ? { "openai/widgetDomain": WIDGET_DOMAIN } : {}),
-        "openai/widgetCSP": {
-          connectDomains: [],
-          resourceDomains: [],
-          frameDomains: []
-        }
+        "openai/toolInvocation/invoked": "매물 조회 완료"
       }
     },
     async ({ city, type }) => {
@@ -366,7 +313,9 @@ window.addEventListener("openai:set_globals", (event) => {
       return {
         content: [{ type: "text", text: `${city} ${type} 최근 실거래 ${listings.length}건을 찾았습니다.` }],
         structuredContent: { listings },
-        _meta: buildWidgetMeta(undefined, "ui://widget/listings-v2.html")
+        _meta: {
+          "openai/outputTemplate": "ui://widget/listings-v2.html"
+        }
       };
     }
   );
@@ -452,16 +401,11 @@ UI에서 후보를 클릭하면 \`select_apartment_candidate\` 도구를 통해 
         legalDong: z.string().optional().describe("읍면동 법정동 이름 (선택사항, 예: '정자동', '금곡동')")
       },
       _meta: {
+        ui: { resourceUri: "ui://widget/apartment_candidates.html" },
         "openai/outputTemplate": "ui://widget/apartment_candidates.html",
         "openai/widgetAccessible": true,
         "openai/toolInvocation/invoking": "아파트 단지 검색 중...",
-        "openai/toolInvocation/invoked": "단지 검색 완료",
-        ...(WIDGET_DOMAIN ? { "openai/widgetDomain": WIDGET_DOMAIN } : {}),
-        "openai/widgetCSP": {
-          connectDomains: [],
-          resourceDomains: [],
-          frameDomains: []
-        }
+        "openai/toolInvocation/invoked": "단지 검색 완료"
       }
     },
     async ({ keyword, districtCode, legalDong }) => {
@@ -514,10 +458,7 @@ UI에서 후보를 클릭하면 \`select_apartment_candidate\` 도구를 통해 
         if (candidates.length === 0) {
           return {
             content: [{ type: "text", text: `'${keyword}' 에 해당하는 아파트를 찾을 수 없으며, 해당 지역에 등록된 아파트도 찾지 못했습니다.` }],
-            structuredContent: { candidates: [], keyword },
-            _meta: {
-              "openai/outputTemplate": "ui://widget/apartment_candidates.html"
-            }
+            structuredContent: { candidates: [], keyword }
           };
         }
 
@@ -538,7 +479,9 @@ UI에서 후보를 클릭하면 \`select_apartment_candidate\` 도구를 통해 
         return {
           content: [{ type: "text", text: promptText }],
           structuredContent: { candidates, keyword: fallbackMode === "none" ? keyword : (legalDong || districtCode || keyword), fallbackMode },
-          _meta: buildWidgetMeta(undefined, "ui://widget/apartment_candidates.html")
+          _meta: {
+            "openai/outputTemplate": "ui://widget/apartment_candidates.html"
+          }
         };
       } catch (err) {
         return {
@@ -592,15 +535,10 @@ UI에서 후보를 클릭하면 \`select_apartment_candidate\` 도구를 통해 
         title: z.string().describe("지도 상단에 표시할 제목 (예: '은마아파트 실거래 위치')")
       },
       _meta: {
+        ui: { resourceUri: "ui://widget/map-ui.html" },
         "openai/outputTemplate": "ui://widget/map-ui.html",
         "openai/toolInvocation/invoking": "위치 정보를 불러오는 중...",
-        "openai/toolInvocation/invoked": "위치 정보 표시 완료",
-        ...(WIDGET_DOMAIN ? { "openai/widgetDomain": WIDGET_DOMAIN } : {}),
-        "openai/widgetCSP": {
-          connectDomains: [],
-          resourceDomains: [],
-          frameDomains: WIDGET_DOMAIN ? [WIDGET_DOMAIN] : []
-        }
+        "openai/toolInvocation/invoked": "위치 정보 표시 완료"
       }
     },
     async ({ address, title }) => {
@@ -615,7 +553,9 @@ UI에서 후보를 클릭하면 \`select_apartment_candidate\` 도구를 통해 
       return {
         content: [{ type: "text", text: `'${address}' 위치 정보를 UI 카드로 표시합니다. (${title || '제목 없음'})` }],
         structuredContent: { address, title, domain: WIDGET_DOMAIN || "http://localhost:3000" },
-        _meta: buildWidgetMeta(undefined, "ui://widget/map-ui.html")
+        _meta: {
+          "openai/outputTemplate": "ui://widget/map-ui.html"
+        }
       };
     }
   );

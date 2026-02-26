@@ -1,0 +1,21 @@
+:root {
+  --radius-main: 18px;
+  --card-shadow: 0 10px 30px rgba(15, 23, 42, 0.16);
+  --card-border: 1px solid rgba(203, 213, 225, 0.8);
+  --backdrop-blur: blur(12px);
+}
+
+/* 모든 위젯 루트 컨테이너에 공통 적용되는 라운드 스타일 */
+.widget-root {
+  margin: 12px !important;
+  border-radius: var(--radius-main) !important;
+  overflow: hidden !important;
+  border: var(--card-border) !important;
+  box-shadow: var(--card-shadow) !important;
+  backdrop-filter: var(--backdrop-blur) !important;
+  -webkit-backdrop-filter: var(--backdrop-blur) !important;
+  /* 컨테이너 크기 조정 */
+  width: calc(100% - 24px) !important;
+  height: auto !important;
+  min-height: 100px;
+}

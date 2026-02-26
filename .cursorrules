@@ -1,0 +1,10 @@
+# AI Agent Development Rules
+
+1. **Update Directory Context Files**: Whenever a file or logic change occurs, you MUST also modify the corresponding `.md` file located in that same directory. These markdown files are maintained as context delivery files to help the AI agent understand and code better.
+2. **Check README First**: Always check the root `README.md` file once before making any development changes.
+3. **Widget & CSP Rules**: Always check and abide by `docs/WIDGET_CSP_AND_DOMAIN_RULES.md` when updating anything related to `ui://widget` or `src/server.js` resources/tools.
+
+## 한국어 버전 (Korean)
+1. **디렉토리별 컨텍스트 파일 관리**: 파일 변경이나 추가 로직 변경이 발생할 때는 항상 해당 디렉토리에  있는 `.md` 파일(컨텍스트 전달 파일)도 함께 수정해야 합니다. 이는 AI 에이전트가 코딩을 더 잘 할 수 있도 록 돕기 위한 목적입니다.
+2. **README.md 사전 확인 필수**: 개발 로직 변경을 시작하기 전에 필수적으로 프로젝트 루트의 `README.md` 파일을 한 번씩 확인해야 합니다.
+3. **위젯 CSP/도메인 규칙 준수 필수**: UI 위젯(`ui://widget`)이나 `src/server.js`의 리소스/도구 등록 부 분을 수정할 때는 `docs/WIDGET_CSP_AND_DOMAIN_RULES.md` 문서를 반드시 확인하고 준수하세요.

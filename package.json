@@ -13,8 +13,9 @@
     "dev:mcp": "tsx src/mcp/server.ts",
     "start:apps": "node --enable-source-maps dist/apps/quickstart/server.js",
     "dev:apps": "tsx src/apps/quickstart/server.ts",
+    "restart:chatgpt": "pkill -f \"tsx src/server.js|startNgrok.js|concurrently|ngrok.*3000\" 2>/dev/null || true; pids=$(lsof -t -iTCP:3000 -sTCP:LISTEN); [ -n \"$pids\" ] && kill -9 $pids 2>/dev/null || true; sleep 1; lsof -nP -iTCP:3000 -sTCP:LISTEN || true; npm run dev:chatgpt",
     "resolve:main-conflicts": "tsx src/scripts/resolveMainConflicts.ts",
-    "dev:chatgpt": "concurrently \"tsx src/server.js\" \"node src/scripts/startNgrok.js\"",
+    "dev:chatgpt": "concurrently -k \"tsx src/server.js\" \"node src/scripts/startNgrok.js\"",
     "db:browser": "tsx src/scripts/oracleBrowser.ts"
   },
   "dependencies": {

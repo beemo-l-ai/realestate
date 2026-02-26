@@ -50,6 +50,8 @@ cp .env.example .env
 - `MOLIT_RENT_API_BASE` (전월세 공공데이터 API)
 - `MOLIT_API_BASE` (매매 공공데이터 API)
 - `ORACLE_POOL_MIN`, `ORACLE_POOL_MAX`
+- `WIDGET_DOMAIN` (Apps 제출 시 권장, 예: `https://your-widget-domain.example`)
+- `KAKAO_MAP_APP_KEY` (카카오맵 JavaScript 키, `show_map` 기본 지도 렌더링용)
 
 ### 2) 설치/빌드
 
@@ -133,3 +135,10 @@ npm run dev:apps
 - `query_realestate_db`: ChatGPT가 안전한 Raw SQL (SELECT 문)을 통해 `re_sale_monthly_aggregates` 등의 통계/개수 집계를 쿼리할 수 있도록 하는 강력한 도구.
 
 (참고사항: `search_realestate_trends` 등은 레거시 `src/mcp/server.ts` 인터페이스에 정의되어 있습니다.)
+
+## 🤖 개발 규칙 (AI Agent Development Rules)
+
+AI 에이전트가 코딩 컨텍스트를 더 잘 파악할 수 있도록 다음 규칙을 엄격히 준수합니다.
+
+1. **디렉토리별 컨텍스트 유지보수**: 파일 변경이나 추가 로직 변경이 발생할 경우, **해당 파일이 속한 디렉토리에 있는 마크다운(`.md`) 파일도 반드시 함께 수정**해야 합니다. 각 디렉토리의 `.md` 파일은 AI 에이전트에게 중요한 컨텍스트를 전달하는 용도로 관리됩니다.
+2. **README 사전 확인**: 개발 및 변경 작업을 시작하기 전에는 **항상 프로젝트 루트의 `README.md` 파일을 한 번씩 확인**하여 전반적인 상태와 가이드를 숙지해야 합니다.

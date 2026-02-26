@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>아파트 후보 선택</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --surface: #ffffff;
+      --line: #e3e8f2;
+      --line-strong: #d5ddea;
+      --text: #0f172a;
+      --muted: #4b5565;
+      --accent: #0f766e;
+      --accent-soft: #e7f7f5;
+      --danger: #b91c1c;
+      --danger-soft: #fff2f2;
+      --radius-lg: 18px;
+      --radius-md: 14px;
+      --shadow: 0 14px 34px rgba(15, 23, 42, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Pretendard", "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
+    }
+
+    body {
+      padding: 14px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .header {
+      padding: 16px 16px 12px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #ffffff 0%, #fafcff 100%);
+    }
+
+    .title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 17px;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+    }
+
+    .count {
+      font-size: 12px;
+      color: var(--muted);
+      border: 1px solid var(--line);
+      background: #f8faff;
+      border-radius: 999px;
+      padding: 4px 8px;
+      white-space: nowrap;
+    }
+
+    .hint {
+      margin: 8px 0 0;
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .body {
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .skeleton {
+      display: grid;
+      gap: 9px;
+    }
+
+    .sk-item {
+      height: 62px;
+      border-radius: var(--radius-md);
+      border: 1px solid #ebf0f8;
+      background: linear-gradient(100deg, #edf2f9 20%, #f8fbff 50%, #edf2f9 80%);
+      background-size: 220% 100%;
+      animation: shimmer 1.2s ease-in-out infinite;
+    }
+
+    @keyframes shimmer {
+      0% { background-position: 180% 0; }
+      100% { background-position: -40% 0; }
+    }
+
+    .list {
+      display: grid;
+      gap: 9px;
+    }
+
+    .item {
+      width: 100%;
+      text-align: left;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      background: #fff;
+      cursor: pointer;
+      transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+    }
+
+    .item:hover {
+      transform: translateY(-1px);
+      border-color: #9fb4d8;
+      box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+    }
+
+    .item:disabled {
+      cursor: not-allowed;
+      opacity: 0.62;
+      box-shadow: none;
+      transform: none;
+    }
+
+    .name {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: #0ea5a0;
+      flex: 0 0 auto;
+    }
+
+    .sub {
+      margin-top: 7px;
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .chip {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 2px 8px;
+      background: #f8fafe;
+    }
+
+    .alias {
+      margin-top: 7px;
+      font-size: 12px;
+      color: #155e75;
+      background: #edfaff;
+      border: 1px solid #d2f2ff;
+      border-radius: 10px;
+      padding: 5px 8px;
+    }
+
+    .status {
+      border: 1px solid #bde7e2;
+      background: var(--accent-soft);
+      color: #0f5132;
+      border-radius: 12px;
+      padding: 9px 10px;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .status.empty {
+      border-color: #ffd6d6;
+      background: var(--danger-soft);
+      color: var(--danger);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="card">
+    <div class="header">
+      <div class="title-row">
+        <h1>후보 단지 선택</h1>
+        <span id="count" class="count">검색 중</span>
+      </div>
+      <p class="hint">단지를 선택하면 이전 요청(시세/추이 조회)을 선택한 단지 기준으로 바로 이어서 실행합니다.</p>
+    </div>
+
+    <div class="body">
+      <div id="loading" class="skeleton" aria-live="polite">
+        <div class="sk-item"></div>
+        <div class="sk-item"></div>
+        <div class="sk-item"></div>
+      </div>
+
+      <div id="list" class="list hidden"></div>
+      <div id="status" class="status hidden" aria-live="polite"></div>
+    </div>
+  </div>
+
+  <script>
+    const loadingEl = document.getElementById('loading');
+    const listEl = document.getElementById('list');
+    const statusEl = document.getElementById('status');
+    const countEl = document.getElementById('count');
+
+    function escapeHtml(value) {
+      return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function setStatus(message, type) {
+      if (!message) {
+        statusEl.className = 'status hidden';
+        statusEl.textContent = '';
+        return;
+      }
+
+      statusEl.className = `status${type === 'empty' ? ' empty' : ''}`;
+      statusEl.textContent = message;
+    }
+
+    function setDisabled(disabled) {
+      const buttons = listEl.querySelectorAll('button.item');
+      buttons.forEach((btn) => { btn.disabled = disabled; });
+    }
+
+    async function triggerAutoContinue(item) {
+      const followupText = `${item.legalDong || ''} ${item.apartmentName || ''} 기준으로 방금 전 요청을 바로 계속 진행해줘.`.trim();
+      try {
+        if (typeof window?.openai?.sendFollowUpMessage === 'function') {
+          await window.openai.sendFollowUpMessage(followupText);
+          return true;
+        }
+
+        if (typeof window?.openai?.setInputText === 'function' && typeof window?.openai?.submitInput === 'function') {
+          await window.openai.setInputText(followupText);
+          await window.openai.submitInput();
+          return true;
+        }
+      } catch (err) {
+        setStatus(`자동 후속 실행 실패: ${err?.message || err}`, 'empty');
+      }
+      return false;
+    }
+
+    async function selectCandidate(item) {
+      const selectedText = `${item.legalDong || ''} ${item.apartmentName || ''}`.trim() || '선택된 단지';
+      setStatus(`선택 반영 중: ${selectedText}`);
+      setDisabled(true);
+
+      try {
+        if (!window?.openai?.callTool) {
+          setStatus(`자동 전달을 지원하지 않아 '${selectedText}'를 채팅으로 입력해 주세요.`, 'empty');
+          return;
+        }
+
+        await window.openai.callTool('select_apartment_candidate', {
+          selectedText,
+          apartmentName: item.apartmentName || selectedText,
+          legalDong: item.legalDong || '',
+          districtCode: item.districtCode || ''
+        });
+
+        const autoTriggered = await triggerAutoContinue(item);
+        if (autoTriggered) {
+          setStatus(`선택 완료: ${selectedText} · 이전 요청을 자동으로 이어서 실행했습니다.`);
+        } else {
+          setStatus(`선택 완료: ${selectedText} · 후속 실행이 자동으로 되지 않으면 채팅창에 '계속 진행해줘'라고 입력해 주세요.`);
+        }
+      } catch (err) {
+        setStatus(`선택 전달 실패: ${err?.message || err}`, 'empty');
+      } finally {
+        setDisabled(false);
+      }
+    }
+
+    function renderCandidates(candidates, fallbackMode) {
+      loadingEl.classList.add('hidden');
+      listEl.classList.remove('hidden');
+
+      if (!Array.isArray(candidates) || candidates.length === 0) {
+        countEl.textContent = '후보 0개';
+        listEl.innerHTML = '';
+        setStatus('후보를 찾지 못했습니다. 지역(예: 정자동/분당구)까지 함께 입력해 주세요.', 'empty');
+        return;
+      }
+
+      countEl.textContent = `후보 ${candidates.length}개`;
+      listEl.innerHTML = candidates.map((item, idx) => {
+        const name = `${item.legalDong || ''} ${item.apartmentName || ''}`.trim() || `후보 ${idx + 1}`;
+        const district = item.districtCode ? `시군구코드 ${item.districtCode}` : '시군구코드 없음';
+        const trades = Number(item.totalTrades || 0).toLocaleString('ko-KR');
+        const aliases = Array.isArray(item.aliases) ? item.aliases.slice(0, 2) : [];
+
+        return `
+          <button class="item" type="button" data-index="${idx}">
+            <div class="name"><span class="dot" aria-hidden="true"></span>${escapeHtml(name)}</div>
+            <div class="sub">
+              <span class="chip">${escapeHtml(district)}</span>
+              <span class="chip">누적 거래 ${escapeHtml(trades)}건</span>
+            </div>
+            ${aliases.length ? `<div class="alias">유사명: ${escapeHtml(aliases.join(', '))}</div>` : ''}
+          </button>
+        `;
+      }).join('');
+
+      const hintByMode = {
+        regional: '정확 매칭이 없어 같은 지역 내 상위 유사 단지를 보여줍니다.',
+        global: '정확 매칭이 없어 전체 데이터에서 대표 유사 단지를 보여줍니다.'
+      };
+      setStatus(hintByMode[fallbackMode] || '후보를 선택하면 즉시 후속 조회를 진행합니다.');
+
+      listEl.querySelectorAll('button.item').forEach((button) => {
+        button.addEventListener('click', () => {
+          const index = Number(button.getAttribute('data-index'));
+          const item = candidates[index];
+          if (item) selectCandidate(item);
+        });
+      });
+    }
+
+    function renderFromPayload(toolOutput) {
+      if (!toolOutput) return;
+      const data = toolOutput.structuredContent || toolOutput;
+      renderCandidates(data?.candidates || [], data?.fallbackMode || 'none');
+    }
+
+    try {
+      if (window?.openai?.toolOutput) {
+        renderFromPayload(window.openai.toolOutput);
+      }
+    } catch (e) { }
+
+    window.addEventListener('message', (event) => {
+      if (event.source !== window.parent) return;
+      const message = event.data;
+      if (!message || message.jsonrpc !== '2.0') return;
+      if (message.method === 'ui/notifications/tool-result') {
+        renderFromPayload(message.params);
+      }
+    });
+
+    window.addEventListener('openai:set_globals', (event) => {
+      renderFromPayload(event.detail?.globals?.toolOutput);
+    });
+  </script>
+</body>
+
+</html>

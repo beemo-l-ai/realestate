@@ -121,6 +121,8 @@ function createRealestateServer() {
     version: APP_VERSION
   });
 
+  let queryCount = 0;
+
   registerAppResource(
     server,
     "listings-widget",
@@ -352,7 +354,7 @@ window.addEventListener("openai:set_globals", (event) => {
 - SQL 문에는 무조건 SELECT 쿼리만 작성 가능합니다.
 - 무언가 위치나 매물 정보를 알려줄 때는 답변 텍스트만 주지 말고 반드시 \`get_location_ui\` 도구를 함께 호출하여 UI 카드를 표시하세요.
 - 사용자가 "해당 지역이 어디야?" 등 위치를 묻는 경우에도 무조건 \`get_location_ui\`을 호출하세요.
-- [매우 중요] 사용자가 질문한 아파트 이름으로 쿼리했을 때 결과가 0건이라면, DB에 저장된 아파트 이름과 다를 수 있습니다. (예: 사용자는 "청송마을 화인"이라고 했으나 DB에는 "유천화인"). 이 경우 절대로 바로 "없습니다"라고 답하지 마시고, 반드시 'search_apartment_candidates' 도구를 이어서 호출해 비슷한 이름의 아파트를 찾아 사용자에게 질문하세요.`,
+- [매우 중요] 사용자가 질문한 아파트 이름으로 쿼리했을 때 결과가 0건이라면, DB에 저장된 아파트 이름과 다를 수 있습니다. (예: 사용자는 "청송마을 화인"이라고 했으나 DB에는 "유천화인"). 이 경우 절대로 바로 "없습니다"라고 답하지 마시고, 반드시 'search_apartment_candidates' (또는 'search_apartment_metadata') 도구를 이어서 호출해 비슷한 이름의 아파트를 찾아 사용자에게 질문하세요.`,
       inputSchema: {
         sqlQuery: z.string().describe("실행할 통계/건수 추출용 Oracle SQL SELECT 구문 (예: SELECT SUM(tx_count) FROM ...)")
       },
@@ -362,13 +364,25 @@ window.addEventListener("openai:set_globals", (event) => {
       }
     },
     async ({ sqlQuery }) => {
+      queryCount++;
       try {
         const rows = await executeSelectQuery(sqlQuery);
+        let text = `쿼리 성공. 결과의 총 행 수: ${rows.length}\n` + JSON.stringify(rows, null, 2);
+
+        if (rows.length === 0) {
+          text += "\n\n[알림] 검색 결과가 0건입니다. 아파트 이름이 정확한지 확인이 필요합니다.";
+          text += "\n'search_apartment_candidates' (또는 'search_apartment_metadata') 도구를 호출하여 정확한 단지명을 확인해 보세요.";
+        }
+
+        if (queryCount >= 2 && rows.length === 0) {
+          text += "\n\n[강력 권고] query_realestate_db를 여러 번 시도했으나 결과를 찾지 못했습니다. 더 이상 SQL을 수정하지 말고, 반드시 'search_apartment_candidates' 도구를 호출하여 사용자에게 단지 선택을 유도하세요.";
+        }
+
         return {
           content: [
             {
               type: "text",
-              text: `쿼리 성공. 결과의 총 행 수: ${rows.length}\n` + JSON.stringify(rows, null, 2)
+              text
             }
           ]
         };
@@ -386,6 +400,103 @@ window.addEventListener("openai:set_globals", (event) => {
     }
   );
 
+  const handleApartmentSearch = async ({ keyword, districtCode, legalDong }) => {
+    try {
+      const baseKeywordVariants = buildKeywordVariants(keyword);
+      const keywordVariants = expandKeywordVariants(baseKeywordVariants);
+      const candidateMap = new Map();
+
+      for (const variant of keywordVariants) {
+        const variantRows = await searchApartmentMetadata({
+          nameContains: variant,
+          districtCode,
+          legalDong,
+          limit: 20
+        });
+        for (const row of variantRows) {
+          const aliases = getApartmentAliases(row.apartmentName);
+          candidateMap.set(`${row.districtCode}|${row.legalDong}|${row.apartmentName}`, { ...row, aliases });
+        }
+        if (candidateMap.size >= 40) break;
+      }
+
+      let candidates = [...candidateMap.values()]
+        .sort((a, b) => scoreCandidate(b, keywordVariants, legalDong) - scoreCandidate(a, keywordVariants, legalDong))
+        .slice(0, 8);
+      let fallbackMode = "none";
+
+      if (candidates.length === 0 && (districtCode || legalDong)) {
+        candidates = (await searchApartmentMetadata({
+          districtCode,
+          legalDong,
+          limit: 200
+        }))
+          .map((row) => ({ ...row, aliases: getApartmentAliases(row.apartmentName) }))
+          .sort((a, b) => scoreCandidate(b, keywordVariants, legalDong) - scoreCandidate(a, keywordVariants, legalDong))
+          .slice(0, 8);
+        fallbackMode = "regional";
+      }
+
+      if (candidates.length === 0) {
+        candidates = (await searchApartmentMetadata({
+          limit: 20
+        }))
+          .map((row) => ({ ...row, aliases: getApartmentAliases(row.apartmentName) }))
+          .sort((a, b) => scoreCandidate(b, keywordVariants, legalDong) - scoreCandidate(a, keywordVariants, legalDong))
+          .slice(0, 8);
+        fallbackMode = "global";
+      }
+
+      if (candidates.length === 0) {
+        return {
+          content: [{ type: "text", text: `'${keyword}' 에 해당하는 아파트를 찾을 수 없으며, 해당 지역에 등록된 아파트도 찾지 못했습니다.` }],
+          structuredContent: { candidates: [], keyword }
+        };
+      }
+
+      let promptText = "";
+      if (fallbackMode === "regional") {
+        promptText = `'${keyword}' 키워드로 일치하는 아파트가 없어, 해당 지역(${legalDong || districtCode})의 전체 단지 ${candidates.length}개를 검색했습니다. 이 중에서 사용자가 찾는 단지명과 가장 유사한 것을 찾아, "혹시 찾으시는 아파트가 OOO 인가요?" 라고 먼저 물어보세요.\n`;
+      } else if (fallbackMode === "global") {
+        promptText = `'${keyword}' 키워드와 정확히 일치하는 단지가 없어 전체 데이터에서 거래가 많은 대표 단지 ${candidates.length}개를 먼저 제시합니다. 사용자에게 지역(시/구/동)을 한 번 더 확인하고, 해당 지역으로 재검색하도록 유도하세요.\n`;
+      } else {
+        promptText = `총 ${candidates.length}개의 단지가 검색되었습니다. 사용자에게 어떤 단지에 대한 정보를 원하는지 되물어주세요.\n`;
+      }
+
+      promptText += candidates.map((c, i) => {
+        const aliasLabel = c.aliases && c.aliases.length ? ` (별칭: ${c.aliases.slice(0, 2).join(", ")})` : "";
+        return `${i + 1}. ${c.legalDong} ${c.apartmentName}${aliasLabel}`;
+      }).join("\n");
+
+      return {
+        content: [{ type: "text", text: promptText }],
+        structuredContent: { candidates, keyword: fallbackMode === "none" ? keyword : (legalDong || districtCode || keyword), fallbackMode },
+        _meta: {
+          "openai/outputTemplate": "ui://widget/apartment_candidates.html"
+        }
+      };
+    } catch (err) {
+      return {
+        content: [{ type: "text", text: `아파트 메타 검색 중 오류 발생: ${err.message} ` }],
+        isError: true
+      };
+    }
+  };
+
+  server.registerTool(
+    "search_apartment_metadata",
+    {
+      title: "아파트 단지 메타 검색 (search_apartment_candidates와 동일)",
+      description: "search_apartment_candidates 도구와 동일한 기능을 수행합니다. 사용자가 'search_apartment_metadata'를 언급하거나 단지 검색이 필요할 때 사용하세요.",
+      inputSchema: {
+        keyword: z.string().describe("사용자 원문 키워드 또는 단지명 일부 (예: '청송마을 화인아파트' 또는 '화인')"),
+        districtCode: z.string().optional().describe("알파벳/숫자 5자리 시군구 코드 (선택사항)"),
+        legalDong: z.string().optional().describe("읍면동 법정동 이름 (선택사항, 예: '정자동', '금곡동')")
+      }
+    },
+    handleApartmentSearch
+  );
+
   server.registerTool(
     "search_apartment_candidates",
     {
@@ -394,7 +505,8 @@ window.addEventListener("openai:set_globals", (event) => {
 keyword는 원문 그대로 입력해도 됩니다. 서버에서 내부적으로 공백/접미어(아파트, 단지, 마을)를 정규화해 여러 변형으로 검색합니다.
 만약 키워드 검색 결과가 없다면, 제공된 districtCode나 legalDong을 활용해 해당 지역의 단지 목록을 넓게 가져옵니다. 지역 정보도 없으면 전체 인기 단지 후보를 제한적으로 제공합니다.
 이 도구를 호출한 후에는 여러 개의 리스트가 반환된다면 사용자에게 "검색된 후보 중 어떤 단지를 찾으시나요?"라고 반드시 되물어서 확인받은 후 원본 질문에 대한 SQL 쿼리를 다시 진행하세요.
-UI에서 후보를 클릭하면 \`select_apartment_candidate\` 도구를 통해 선택값이 자동 전달될 수 있으므로, 해당 도구 결과를 우선 반영해 후속 조회를 진행하세요.`,
+UI에서 후보를 클릭하면 \`select_apartment_candidate\` 도구를 통해 선택값이 자동 전달될 수 있으므로, 해당 도구 결과를 우선 반영해 후속 조회를 진행하세요.
+(별칭: search_apartment_metadata)`,
       inputSchema: {
         keyword: z.string().describe("사용자 원문 키워드 또는 단지명 일부 (예: '청송마을 화인아파트' 또는 '화인')"),
         districtCode: z.string().optional().describe("알파벳/숫자 5자리 시군구 코드 (선택사항)"),
@@ -408,88 +520,7 @@ UI에서 후보를 클릭하면 \`select_apartment_candidate\` 도구를 통해 
         "openai/toolInvocation/invoked": "단지 검색 완료"
       }
     },
-    async ({ keyword, districtCode, legalDong }) => {
-      try {
-        const baseKeywordVariants = buildKeywordVariants(keyword);
-        const keywordVariants = expandKeywordVariants(baseKeywordVariants);
-        const candidateMap = new Map();
-
-        for (const variant of keywordVariants) {
-          const variantRows = await searchApartmentMetadata({
-            nameContains: variant,
-            districtCode,
-            legalDong,
-            limit: 20
-          });
-          for (const row of variantRows) {
-            const aliases = getApartmentAliases(row.apartmentName);
-            candidateMap.set(`${row.districtCode}|${row.legalDong}|${row.apartmentName}`, { ...row, aliases });
-          }
-          if (candidateMap.size >= 40) break;
-        }
-
-        let candidates = [...candidateMap.values()]
-          .sort((a, b) => scoreCandidate(b, keywordVariants, legalDong) - scoreCandidate(a, keywordVariants, legalDong))
-          .slice(0, 8);
-        let fallbackMode = "none";
-
-        if (candidates.length === 0 && (districtCode || legalDong)) {
-          candidates = (await searchApartmentMetadata({
-            districtCode,
-            legalDong,
-            limit: 200
-          }))
-            .map((row) => ({ ...row, aliases: getApartmentAliases(row.apartmentName) }))
-            .sort((a, b) => scoreCandidate(b, keywordVariants, legalDong) - scoreCandidate(a, keywordVariants, legalDong))
-            .slice(0, 8);
-          fallbackMode = "regional";
-        }
-
-        if (candidates.length === 0) {
-          candidates = (await searchApartmentMetadata({
-            limit: 20
-          }))
-            .map((row) => ({ ...row, aliases: getApartmentAliases(row.apartmentName) }))
-            .sort((a, b) => scoreCandidate(b, keywordVariants, legalDong) - scoreCandidate(a, keywordVariants, legalDong))
-            .slice(0, 8);
-          fallbackMode = "global";
-        }
-
-        if (candidates.length === 0) {
-          return {
-            content: [{ type: "text", text: `'${keyword}' 에 해당하는 아파트를 찾을 수 없으며, 해당 지역에 등록된 아파트도 찾지 못했습니다.` }],
-            structuredContent: { candidates: [], keyword }
-          };
-        }
-
-        let promptText = "";
-        if (fallbackMode === "regional") {
-          promptText = `'${keyword}' 키워드로 일치하는 아파트가 없어, 해당 지역(${legalDong || districtCode})의 전체 단지 ${candidates.length}개를 검색했습니다. 이 중에서 사용자가 찾는 단지명과 가장 유사한 것을 찾아, "혹시 찾으시는 아파트가 OOO 인가요?" 라고 먼저 물어보세요.\n`;
-        } else if (fallbackMode === "global") {
-          promptText = `'${keyword}' 키워드와 정확히 일치하는 단지가 없어 전체 데이터에서 거래가 많은 대표 단지 ${candidates.length}개를 먼저 제시합니다. 사용자에게 지역(시/구/동)을 한 번 더 확인하고, 해당 지역으로 재검색하도록 유도하세요.\n`;
-        } else {
-          promptText = `총 ${candidates.length}개의 단지가 검색되었습니다. 사용자에게 어떤 단지에 대한 정보를 원하는지 되물어주세요.\n`;
-        }
-
-        promptText += candidates.map((c, i) => {
-          const aliasLabel = c.aliases && c.aliases.length ? ` (별칭: ${c.aliases.slice(0, 2).join(", ")})` : "";
-          return `${i + 1}. ${c.legalDong} ${c.apartmentName}${aliasLabel}`;
-        }).join("\n");
-
-        return {
-          content: [{ type: "text", text: promptText }],
-          structuredContent: { candidates, keyword: fallbackMode === "none" ? keyword : (legalDong || districtCode || keyword), fallbackMode },
-          _meta: {
-            "openai/outputTemplate": "ui://widget/apartment_candidates.html"
-          }
-        };
-      } catch (err) {
-        return {
-          content: [{ type: "text", text: `아파트 메타 검색 중 오류 발생: ${err.message} ` }],
-          isError: true
-        };
-      }
-    }
+    handleApartmentSearch
   );
 
   server.registerTool(
@@ -512,7 +543,9 @@ UI에서 후보를 클릭하면 \`select_apartment_candidate\` 도구를 통해 
       content: [
         {
           type: "text",
-          text: `사용자가 후보 단지를 선택했습니다: ${selectedText}. 이 단지(${legalDong || "법정동 미상"} ${apartmentName || selectedText})를 기준으로 원래 질문에서 하려던 작업(시세/추이/건수 조회)을 즉시 이어서 실행하세요. 추가 확인 질문 없이 가능한 경우 바로 SQL 조회를 호출하세요.`
+          text: `[시스템 알림] 사용자가 후보 단지를 선택했습니다: ${selectedText}.
+이 단지(${legalDong || "법정동 미상"} ${apartmentName || selectedText})를 기준으로 원래 질문에서 하려던 작업(시세/추이/건수 조회)을 즉시 이어서 실행하세요.
+추가 확인 질문 없이 바로 'query_realestate_db' 도구를 호출하여 SQL 조회를 진행해야 합니다.`
         }
       ],
       structuredContent: {
@@ -520,7 +553,7 @@ UI에서 후보를 클릭하면 \`select_apartment_candidate\` 도구를 통해 
         apartmentName: apartmentName || selectedText,
         legalDong: legalDong || null,
         districtCode: districtCode || null,
-        autoContinuePrompt: `${legalDong || ""} ${apartmentName || selectedText} 기준으로 이전 요청을 계속 진행해줘.`
+        autoContinuePrompt: `${legalDong || ""} ${apartmentName || selectedText} 기준으로 원래 요청을 중단 없이 계속 진행해줘.`
       }
     })
   );
@@ -575,6 +608,7 @@ app.use(cors({
 
 // ChatGPT Web SDK requires raw body or parsed body, StreamableHTTPServerTransport handles standard express req
 app.use(express.json());
+app.use(express.static(PUBLIC_DIR));
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, name: "realestate-app", version: APP_VERSION });
@@ -654,8 +688,14 @@ app.all("/mcp", async (req, res) => {
 });
 
 const server = app.listen(PORT, () => {
-  console.log(`[realestate - app] MCP endpoint listening on http://localhost:${PORT}/mcp`);
-  console.log(`[realestate - app] Test page: http://localhost:${PORT}/test?key=${KAKAO_MAP_APP_KEY}`);
+  console.log(`\n[realestate - app] 🚀 MCP server is running!`);
+  console.log(`--------------------------------------------------------`);
+  console.log(`📍 MCP Endpoint: http://localhost:${PORT}/mcp`);
+  console.log(`🛠️  Local Widget Test URLs (브라우저에서 바로 확인):`);
+  console.log(`   - 아파트 후보: http://localhost:${PORT}/apartment_candidates.html`);
+  console.log(`   - 시세 추이:   http://localhost:${PORT}/trend-widget.html`);
+  console.log(`   - 지도 UI:     http://localhost:${PORT}/map-ui.html`);
+  console.log(`--------------------------------------------------------\n`);
 });
 
 server.on("error", (err) => {

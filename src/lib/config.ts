@@ -10,14 +10,33 @@ const required = (key: string): string => {
   return value;
 };
 
+const optionalNumber = (key: string, fallback: number): number => {
+  const value = process.env[key];
+  if (!value) return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
 export const config = {
-  firebaseProjectId: required("FIREBASE_PROJECT_ID"),
-  firebaseClientEmail: required("FIREBASE_CLIENT_EMAIL"),
-  firebasePrivateKey: required("FIREBASE_PRIVATE_KEY").replace(/\\n/g, "\n"),
+  oracleUser: required("ORACLE_USER"),
+  oraclePassword: required("ORACLE_PASSWORD"),
+  oracleConnectString: required("ORACLE_CONNECT_STRING"),
+
+  // For Autonomous DB wallets (TNS_ADMIN / wallet)
+  oracleWalletDir: process.env.ORACLE_WALLET_DIR,
+  oracleWalletPassword: process.env.ORACLE_WALLET_PASSWORD,
+
+  oraclePoolMin: optionalNumber("ORACLE_POOL_MIN", 1),
+  oraclePoolMax: optionalNumber("ORACLE_POOL_MAX", 10),
+  oraclePoolIncrement: optionalNumber("ORACLE_POOL_INCREMENT", 1),
+
   molitServiceKey: process.env.MOLIT_SERVICE_KEY,
   molitApiBase:
     process.env.MOLIT_API_BASE ??
     "https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev",
+  molitRentApiBase:
+    process.env.MOLIT_RENT_API_BASE ??
+    "http://apis.data.go.kr/1613000/RTMSDataSvcAptRent/getRTMSDataSvcAptRent",
 };
 
 export const seoulMetroDistricts = [

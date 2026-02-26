@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="ko">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>카카오맵 SDK 테스트</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: system-ui, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            min-height: 100vh;
+            padding: 24px;
+        }
+
+        h1 {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: #f8fafc;
+        }
+
+        .subtitle {
+            font-size: 13px;
+            color: #64748b;
+            margin-bottom: 24px;
+        }
+
+        .card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+
+        .card-header {
+            padding: 14px 16px;
+            background: #0f172a;
+            border-bottom: 1px solid #334155;
+            font-size: 13px;
+            font-weight: 600;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .card-body {
+            padding: 16px;
+        }
+
+        #status-banner {
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 20px;
+        }
+
+        .status-loading {
+            background: #1e3a5f;
+            color: #93c5fd;
+            border: 1px solid #2563eb;
+        }
+
+        .status-ok {
+            background: #14532d;
+            color: #86efac;
+            border: 1px solid #16a34a;
+        }
+
+        .status-error {
+            background: #450a0a;
+            color: #fca5a5;
+            border: 1px solid #dc2626;
+        }
+
+        #map {
+            width: 100%;
+            height: 380px;
+            border-radius: 8px;
+            background: #334155;
+        }
+
+        .search-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        input {
+            flex: 1;
+            padding: 10px 12px;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            color: #e2e8f0;
+            font-size: 14px;
+            outline: none;
+        }
+
+        input:focus {
+            border-color: #3b82f6;
+        }
+
+        button {
+            padding: 10px 20px;
+            background: #2563eb;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #1d4ed8;
+        }
+
+        .log-box {
+            background: #0f172a;
+            border: 1px solid #1e293b;
+            border-radius: 8px;
+            padding: 12px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .log-item {
+            padding: 3px 0;
+            border-bottom: 1px solid #1e293b;
+            color: #94a3b8;
+        }
+
+        .log-ok {
+            color: #86efac;
+        }
+
+        .log-err {
+            color: #fca5a5;
+        }
+
+        .log-info {
+            color: #93c5fd;
+        }
+
+        .key-display {
+            font-family: monospace;
+            font-size: 13px;
+            color: #fbbf24;
+            background: #1e1a00;
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 1px solid #854d0e;
+            word-break: break-all;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🗺️ 카카오맵 SDK 테스트</h1>
+    <p class="subtitle">카카오 JavaScript SDK가 정상 작동하는지 로컬에서 검증합니다.</p>
+
+    <div id="status-banner" class="status-loading">⏳ SDK 로딩 중...</div>
+
+    <div class="card">
+        <div class="card-header">앱 키 정보</div>
+        <div class="card-body">
+            <div class="key-display" id="key-display">로딩 중...</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">주소/키워드 검색 테스트</div>
+        <div class="card-body">
+            <div class="search-row">
+                <input id="search-input" type="text" placeholder="예: 서울 강남구 압구정동 현대2차아파트" value="서울 강남구 압구정동 현대2차아파트" />
+                <button onclick="searchAddress()">검색</button>
+            </div>
+            <div id="map"></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">로그</div>
+        <div class="card-body">
+            <div class="log-box" id="log-box"></div>
+        </div>
+    </div>
+
+    <script>
+        // ── 앱 키를 URL 파라미터 또는 환경변수에서 읽기 ──────────
+        const params = new URLSearchParams(location.search);
+        const KAKAO_KEY = params.get('key') || '';
+
+        document.getElementById('key-display').textContent =
+            KAKAO_KEY ? `키: ${KAKAO_KEY.slice(0, 8)}...${KAKAO_KEY.slice(-4)} (총 ${KAKAO_KEY.length}자)` : '⚠️ 키 없음 — ?key=YOUR_KEY 쿼리스트링으로 전달하세요';
+
+        function log(msg, type = '') {
+            const box = document.getElementById('log-box');
+            const item = document.createElement('div');
+            item.className = 'log-item ' + (type ? 'log-' + type : '');
+            item.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            box.prepend(item);
+        }
+
+        function setBanner(msg, type) {
+            const el = document.getElementById('status-banner');
+            el.textContent = msg;
+            el.className = 'status-' + type;
+        }
+
+        // ── 카카오맵 SDK 로드 ─────────────────────────────────────
+        function loadKakao() {
+            if (!KAKAO_KEY) {
+                setBanner('❌ KAKAO_KEY가 없습니다. URL에 ?key=<앱키> 를 추가하세요.', 'error');
+                log('앱 키 없음', 'err');
+                return;
+            }
+            log('SDK 로드 시작...', 'info');
+            const script = document.createElement('script');
+            script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(KAKAO_KEY)}&autoload=false&libraries=services`;
+            const timeout = setTimeout(() => {
+                setBanner('❌ SDK 로딩 타임아웃 (8초 초과)', 'error');
+                log('타임아웃', 'err');
+            }, 8000);
+            script.onload = () => {
+                log('script.onload 발생 — kakao.maps.load() 호출 중...', 'info');
+                try {
+                    kakao.maps.load(() => {
+                        clearTimeout(timeout);
+                        setBanner('✅ 카카오맵 SDK 정상 로드! 검색을 테스트해보세요.', 'ok');
+                        log('SDK 초기화 완료', 'ok');
+                        initMap();
+                    });
+                } catch (e) {
+                    clearTimeout(timeout);
+                    setBanner('❌ kakao.maps.load() 오류: ' + e.message, 'error');
+                    log('load() 오류: ' + e.message, 'err');
+                }
+            };
+            script.onerror = (e) => {
+                clearTimeout(timeout);
+                setBanner('❌ SDK 스크립트 로드 실패 — 앱 키 또는 도메인 등록 문제일 수 있습니다.', 'error');
+                log('script.onerror 발생 — 도메인 미등록 또는 키 오류', 'err');
+            };
+            document.head.appendChild(script);
+        }
+
+        let map, geocoder, places;
+
+        function initMap() {
+            const container = document.getElementById('map');
+            map = new kakao.maps.Map(container, {
+                center: new kakao.maps.LatLng(37.5665, 126.9780),
+                level: 4,
+            });
+            geocoder = new kakao.maps.services.Geocoder();
+            places = new kakao.maps.services.Places();
+            log('지도 컨테이너 초기화 완료', 'ok');
+            // 자동 검색 실행
+            searchAddress();
+        }
+
+        function searchAddress() {
+            if (!map) { log('지도 미초기화 — SDK 로딩 대기 중', 'err'); return; }
+            const query = document.getElementById('search-input').value.trim();
+            if (!query) return;
+            log(`주소 검색: "${query}"`, 'info');
+
+            geocoder.addressSearch(query, (result, status) => {
+                if (status === kakao.maps.services.Status.OK && result.length) {
+                    const lat = Number(result[0].y), lng = Number(result[0].x);
+                    setMarker(lat, lng, query);
+                    log(`✅ 주소 검색 성공 → (${lat.toFixed(4)}, ${lng.toFixed(4)})`, 'ok');
+                } else {
+                    log(`주소 검색 결과 없음 — 키워드 검색 시도...`, 'info');
+                    places.keywordSearch(query, (r, s) => {
+                        if (s === kakao.maps.services.Status.OK && r.length) {
+                            const lat = Number(r[0].y), lng = Number(r[0].x);
+                            setMarker(lat, lng, r[0].place_name || query);
+                            log(`✅ 키워드 검색 성공 → ${r[0].place_name} (${lat.toFixed(4)}, ${lng.toFixed(4)})`, 'ok');
+                        } else {
+                            log(`❌ 키워드 검색도 결과 없음`, 'err');
+                        }
+                    });
+                }
+            });
+        }
+
+        function setMarker(lat, lng, name) {
+            const center = new kakao.maps.LatLng(lat, lng);
+            map.setCenter(center);
+            map.setLevel(4);
+            const marker = new kakao.maps.Marker({ position: center, map });
+            const info = new kakao.maps.InfoWindow({
+                content: `<div style="padding:6px 10px;font-size:13px;font-weight:600;">${name}</div>`,
+            });
+            info.open(map, marker);
+        }
+
+        loadKakao();
+    </script>
+</body>
+
+</html>

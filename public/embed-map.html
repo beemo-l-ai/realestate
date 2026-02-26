@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="utf-8">
+    <title>Map Embed</title>
+    <style>
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #f8fafc;
+        }
+
+        #map {
+            width: 100%;
+            height: 100vh;
+        }
+
+        .loading {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            color: #64748b;
+            font-family: ui-sans-serif, system-ui, sans-serif;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .spinner {
+            margin-bottom: 12px;
+            width: 24px;
+            height: 24px;
+            border: 3px solid #e2e8f0;
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="map">
+        <div class="loading">
+            <div class="spinner"></div>
+            <div>지도를 불러오는 중...</div>
+        </div>
+    </div>
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const key = '__KAKAO_KEY__'; // Replaced by server
+        const address = params.get('address');
+        const title = params.get('title') || address;
+
+        if (!key) {
+            document.getElementById('map').innerHTML = '<div class="loading">카카오맵 API 키가 설정되지 않았습니다.</div>';
+        } else if (!address) {
+            document.getElementById('map').innerHTML = '<div class="loading">주소 정보가 없습니다.</div>';
+        } else {
+            const script = document.createElement('script');
+            script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(key)}&autoload=false&libraries=services`;
+            script.onload = () => {
+                kakao.maps.load(() => {
+                    const mapContainer = document.getElementById('map');
+                    mapContainer.innerHTML = ''; // clear loading
+                    const map = new kakao.maps.Map(mapContainer, { center: new kakao.maps.LatLng(37.566826, 126.9786567), level: 4 });
+                    const geocoder = new kakao.maps.services.Geocoder();
+                    const places = new kakao.maps.services.Places();
+
+                    const setMarker = (lat, lng, name) => {
+                        const center = new kakao.maps.LatLng(lat, lng);
+                        map.setCenter(center);
+                        const marker = new kakao.maps.Marker({ position: center, map });
+                        const info = new kakao.maps.InfoWindow({ content: `<div style="padding:4px 8px;font-size:12px;font-weight:600;white-space:nowrap;">${name}</div>` });
+                        info.open(map, marker);
+                    };
+
+                    const fallbackOsm = () => {
+                        const enc = encodeURIComponent(address);
+                        const kakaoUrl = 'https://map.kakao.com/link/search/' + enc;
+
+                        mapContainer.innerHTML = `
+                            <div style="display:flex; flex-direction:column; justify-content:center; align-items:center; height:100vh; background:#f8fafc; font-family:sans-serif; color:#334155;">
+                                <div style="font-size:16px; font-weight:600; margin-bottom:12px;">정확한 지도 위치를 찾을 수 없습니다</div>
+                                <div style="font-size:14px; margin-bottom:24px; color:#64748b; padding:0 20px; text-align:center;">주소: \${address}</div>
+                                <a href="\${kakaoUrl}" target="_blank" style="padding:10px 16px; background:#fee500; color:#191919; text-decoration:none; border-radius:8px; font-weight:600; font-size:14px; display:inline-flex; align-items:center;">
+                                    카카오맵에서 직접 검색하기
+                                </a>
+                            </div>
+                        `;
+                    };
+
+                    geocoder.addressSearch(address, (result, status) => {
+                        if (status === kakao.maps.services.Status.OK && result.length) {
+                            setMarker(result[0].y, result[0].x, title);
+                        } else {
+                            places.keywordSearch(address, (r, s) => {
+                                if (s === kakao.maps.services.Status.OK && r.length) {
+                                    setMarker(r[0].y, r[0].x, r[0].place_name || title);
+                                } else {
+                                    fallbackOsm();
+                                }
+                            });
+                        }
+                    });
+                });
+            };
+            script.onerror = () => {
+                document.getElementById('map').innerHTML = '<div class="loading">지도 SDK 로드 실패</div>';
+            };
+            document.head.appendChild(script);
+        }
+    </script>
+</body>
+
+</html>

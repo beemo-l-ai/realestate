@@ -30,9 +30,9 @@ registerAppResource(server, "trend-widget", UI_TEMPLATE_URI, {}, async () => ({
         ui: {
           domain: WIDGET_DOMAIN,
           csp: {
-            connectDomains: [],
-            resourceDomains: [],
-            frameDomains: [],
+            connectDomains: [WIDGET_DOMAIN],
+            resourceDomains: [WIDGET_DOMAIN],
+            frameDomains: [WIDGET_DOMAIN],
           },
         },
       },

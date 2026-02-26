@@ -105,11 +105,15 @@ const WIDGET_DOMAIN = process.env.WIDGET_DOMAIN || `http://localhost:${PORT}`;
 const KAKAO_MAP_APP_KEY = process.env.KAKAO_MAP_APP_KEY;
 
 const KAKAO_CSP = {
-  connectDomains: [],
+  connectDomains: [
+    "https://dapi.kakao.com",
+    "https://*.daumcdn.net"
+  ],
   resourceDomains: [
     "https://dapi.kakao.com",
     "https://*.daumcdn.net",
-    "https://map.kakao.com"
+    "https://map.kakao.com",
+    WIDGET_DOMAIN
   ],
   frameDomains: [
     WIDGET_DOMAIN,
@@ -118,9 +122,9 @@ const KAKAO_CSP = {
 };
 
 const DEFAULT_CSP = {
-  connectDomains: [],
-  resourceDomains: [],
-  frameDomains: []
+  connectDomains: [WIDGET_DOMAIN],
+  resourceDomains: [WIDGET_DOMAIN],
+  frameDomains: [WIDGET_DOMAIN]
 };
 
 function createRealestateServer() {
@@ -131,6 +135,7 @@ function createRealestateServer() {
 
   let queryCount = 0;
 
+  // 1. 시세/매물 리스트 위젯 (listings-v2.html)
   registerAppResource(
     server,
     "listings-widget",
@@ -141,68 +146,7 @@ function createRealestateServer() {
         {
           uri: "ui://widget/listings-v2.html",
           mimeType: RESOURCE_MIME_TYPE,
-          text: `<!doctype html>
-  <html lang="ko">
-    <head>
-      <meta charset="utf-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1" />
-      <title>매물 결과</title>
-      <style>
-        body {font-family: ui-sans-serif, system-ui, sans-serif; margin: 0; padding: 12px; }
-        .card {border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; margin-bottom: 8px; }
-        .price {font-weight: 700; color: #111827; }
-        .title {font-weight: 500; margin-top: 4px; }
-        .meta {color: #6b7280; font-size: 13px; margin-top: 4px; }
-      </style>
-    </head>
-    <body>
-      <div id="root">데이터를 불러오는 중...</div>
-      <script>
-        const root = document.getElementById("root");
-
-      const renderListings = (listings) => {
-        if (!Array.isArray(listings) || listings.length === 0) {
-          root.textContent = "표시할 매물이 없습니다.";
-        return;
-        }
-        root.innerHTML = listings.map(function(item) {
-          return "<div class=\\"card\\">" +
-        "<div class=\\"price\\">" + item.price + "</div>" +
-      "<div class=\\"title\\">" + item.title + "</div>" +
-    "<div class=\\"meta\\">" + item.city + " · " + item.type + "</div>" +
-"</div>";
-        }).join("");
-      };
-
-      const renderFromPayload = (toolOutput) => {
-        if (!toolOutput) return;
-        const data = toolOutput.structuredContent || toolOutput;
-        if (data && data.listings) {
-          renderListings(data.listings);
-        }
-      };
-
-try {
-  if (window?.openai?.toolOutput) {
-    renderFromPayload(window.openai.toolOutput);
-  }
-} catch (e) { }
-
-window.addEventListener('message', (event) => {
-  if (event.source !== window.parent) return;
-  const message = event.data;
-  if (!message || message.jsonrpc !== '2.0') return;
-  if (message.method === 'ui/notifications/tool-result') {
-    renderFromPayload(message.params);
-  }
-}, { passive: true });
-
-window.addEventListener("openai:set_globals", (event) => {
-  renderFromPayload(event.detail?.globals?.toolOutput);
-}, { passive: true });
-    </script>
-  </body>
-</html>`,
+          text: readFileSync(path.join(PUBLIC_DIR, "listings-v2.html"), "utf-8"),
           _meta: {
             ui: {
               domain: WIDGET_DOMAIN,
@@ -214,6 +158,7 @@ window.addEventListener("openai:set_globals", (event) => {
     })
   );
 
+  // 2. 지도 UI 위젯
   registerAppResource(
     server,
     "map-ui",
@@ -236,6 +181,7 @@ window.addEventListener("openai:set_globals", (event) => {
     })
   );
 
+  // 3. 아파트 후보 선택 위젯
   registerAppResource(
     server,
     "apartment-candidates-ui",
@@ -247,6 +193,29 @@ window.addEventListener("openai:set_globals", (event) => {
           uri: "ui://widget/apartment_candidates.html",
           mimeType: RESOURCE_MIME_TYPE,
           text: readFileSync(path.join(PUBLIC_DIR, "apartment_candidates.html"), "utf-8"),
+          _meta: {
+            ui: {
+              domain: WIDGET_DOMAIN,
+              csp: DEFAULT_CSP
+            }
+          }
+        }
+      ]
+    })
+  );
+
+  // 4. 시세 추이 위젯
+  registerAppResource(
+    server,
+    "trend-widget-ui",
+    "ui://widget/trend-widget.html",
+    {},
+    async () => ({
+      contents: [
+        {
+          uri: "ui://widget/trend-widget.html",
+          mimeType: RESOURCE_MIME_TYPE,
+          text: readFileSync(path.join(PUBLIC_DIR, "trend-widget.html"), "utf-8"),
           _meta: {
             ui: {
               domain: WIDGET_DOMAIN,

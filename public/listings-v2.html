@@ -5,7 +5,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' *; frame-src 'self' *; connect-src 'self' *; img-src 'self' data: *;">
-  <title>아파트 후보 선택</title>
+  <title>최근 실거래 사례</title>
   <style>
     /* ===== global-ui (인라인) ===== */
     :root {
@@ -138,7 +138,7 @@
 
     .body {
       padding: 12px;
-      max-height: 340px;
+      max-height: 400px;
       overflow-y: auto;
       display: grid;
       gap: 8px;
@@ -151,7 +151,7 @@
     }
 
     .sk-item {
-      height: 68px;
+      height: 72px;
       border-radius: var(--radius-md);
       background: linear-gradient(100deg, rgba(237, 242, 249, .6) 20%, rgba(248, 251, 255, .8) 50%, rgba(237, 242, 249, .6) 80%);
       background-size: 200% 100%;
@@ -173,62 +173,40 @@
       gap: 8px;
     }
 
-    .item {
+    .card {
       width: 100%;
       text-align: left;
       border: 1px solid var(--line);
       border-radius: var(--radius-md);
-      padding: 12px 14px;
+      padding: 14px;
       background: #ffffff;
-      cursor: pointer;
-      transition: all .2s ease;
       display: flex;
       flex-direction: column;
       gap: 6px;
+      transition: border-color .2s ease;
     }
 
-    .item:hover:not(:disabled) {
+    .card:hover {
       border-color: var(--accent);
-      background: #f0f9ff;
-      transform: translateY(-1px);
     }
 
-    .item:disabled {
-      cursor: default;
-      opacity: 0.45;
-      pointer-events: none;
+    .price {
+      font-size: 16px;
+      font-weight: 800;
+      color: #111827;
+      letter-spacing: -0.02em;
     }
 
-    .item.selected {
-      border-color: var(--accent);
-      background: #e0f2fe;
-      opacity: 1;
-      pointer-events: none;
-    }
-
-    .name-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--accent);
-    }
-
-    .name {
+    .title {
       font-size: 14px;
-      font-weight: 700;
+      font-weight: 600;
       color: var(--text);
     }
 
-    .sub {
+    .meta {
       display: flex;
       flex-wrap: wrap;
-      gap: 5px;
+      gap: 6px;
     }
 
     .chip {
@@ -236,15 +214,16 @@
       color: var(--muted);
       background: #f1f5f9;
       border-radius: 4px;
-      padding: 1px 5px;
+      padding: 1px 6px;
     }
 
-    .alias {
+    .type-tag {
       font-size: 11px;
-      color: #0284c7;
-      background: #e0f2fe;
+      font-weight: 700;
+      color: #ffffff;
+      background: var(--accent);
       border-radius: 4px;
-      padding: 1px 5px;
+      padding: 1px 6px;
     }
 
     .status {
@@ -255,31 +234,6 @@
       background: #f8fbff;
       border-top: 1px solid var(--line);
       color: #4b5563;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-    }
-
-    .status.empty {
-      color: #ef4444;
-      background: #fef2f2;
-    }
-
-    .status .mini-spinner {
-      width: 14px;
-      height: 14px;
-      border: 2px solid #cbd5e1;
-      border-top-color: var(--accent);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      flex-shrink: 0;
-    }
-
-    @keyframes spin {
-      to {
-        transform: rotate(360deg);
-      }
     }
 
     .hidden {
@@ -302,144 +256,87 @@
     <div id="root">
       <div class="header">
         <div class="title-row">
-          <h1>단지 선택</h1>
-          <span id="count" class="count">찾는 중...</span>
+          <h1 id="header-title">실거래 사례</h1>
+          <span id="count" class="count">불러오는 중...</span>
         </div>
-        <p class="hint">단지를 선택하면 해당 정보로 조회를 바로 재개합니다.</p>
+        <p class="hint">최근 국토교통부에 신고된 실거래 사례 샘플입니다.</p>
       </div>
 
       <div class="body">
         <div id="loading" class="skeleton">
           <div class="sk-item"></div>
           <div class="sk-item"></div>
+          <div class="sk-item"></div>
         </div>
         <div id="list" class="list hidden"></div>
       </div>
 
-      <div id="status" class="status hidden"></div>
+      <div id="status" class="status">실거래 상세 내역을 표시합니다.</div>
     </div>
   </div>
 
   <script>
     const loadingEl = document.getElementById('loading');
     const listEl = document.getElementById('list');
-    const statusEl = document.getElementById('status');
     const countEl = document.getElementById('count');
+    const statusEl = document.getElementById('status');
 
     function escapeHtml(v) {
-      return String(v || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
+      return String(v || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     }
 
-    let isSelected = false;
-
-    function setStatus(msg, type) {
-      if (!msg) { statusEl.classList.add('hidden'); return; }
-      statusEl.className = `status ${type === 'empty' ? 'empty' : ''}`;
-      if (type === 'loading') {
-        statusEl.innerHTML = `<span class="mini-spinner"></span><span>${msg}</span>`;
-      } else {
-        statusEl.textContent = msg;
-      }
-      statusEl.classList.remove('hidden');
-    }
-
-    async function selectCandidate(item, btnEl) {
-      if (isSelected) return;
-      isSelected = true;
-
-      const selectedText = `${item.legalDong || ''} ${item.apartmentName || ''}`.trim();
-
-      // Disable all buttons & highlight the selected one
-      const buttons = listEl.querySelectorAll('button.item');
-      buttons.forEach(btn => {
-        btn.disabled = true;
-        if (btn === btnEl) btn.classList.add('selected');
-      });
-
-      setStatus(`${selectedText} 선택됨 · 조회를 재개하는 중...`, 'loading');
-
-      try {
-        const followupText = `${selectedText} 단지로 선택했어. 방금 전 요청을 이 단지 기준으로 바로 계속 진행해줘.`.trim();
-
-        if (typeof window?.openai?.sendFollowUpMessage === 'function') {
-          await window.openai.sendFollowUpMessage({ prompt: followupText });
-        }
-
-        setStatus(`${selectedText} 선택 완료 · 채팅에서 결과를 확인하세요.`);
-
-        // --- Local Simulator logic ---
-        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
-          alert(`[Simulator] ChatGPT에게 메시지 전달됨:\n"${followupText}"`);
-        }
-      } catch (err) {
-        setStatus('전달 오류: ' + err.message, 'empty');
-        // Don't re-enable — keep locked to prevent duplicate sends
-      }
-    }
-
-    function renderCandidates(candidates, fallbackMode) {
+    function renderListings(listings) {
       loadingEl.classList.add('hidden');
       listEl.classList.remove('hidden');
 
-      if (!candidates?.length) {
-        countEl.textContent = '0개';
-        listEl.innerHTML = '';
-        setStatus('일치하는 단지가 없습니다.', 'empty');
+      if (!Array.isArray(listings) || listings.length === 0) {
+        countEl.textContent = '0건';
+        listEl.innerHTML = '<div style="padding: 20px; text-align: center; color: #6b7280; font-size: 14px;">표시할 매물이 없습니다.</div>';
         return;
       }
 
-      countEl.textContent = `${candidates.length}개 후보`;
-      listEl.innerHTML = candidates.map((item, idx) => {
-        const name = `${item.legalDong || ''} ${item.apartmentName || ''}`.trim();
-        const trades = Number(item.totalTrades || 0).toLocaleString();
-        const aliases = Array.isArray(item.aliases) ? item.aliases.slice(0, 2) : [];
-
+      countEl.textContent = `${listings.length}건`;
+      listEl.innerHTML = listings.map(function (item) {
         return `
-          <button class="item" type="button" data-index="${idx}">
-            <div class="name-row">
-              <span class="dot"></span>
-              <span class="name">${escapeHtml(name)}</span>
+          <div class="card">
+            <div class="price">${escapeHtml(item.price)}</div>
+            <div class="title">${escapeHtml(item.title)}</div>
+            <div class="meta">
+              <span class="type-tag">${escapeHtml(item.type)}</span>
+              <span class="chip">${escapeHtml(item.city)}</span>
             </div>
-            <div class="sub">
-              <span class="chip">${escapeHtml(item.districtCode || '')}</span>
-              <span class="chip">실거래 ${escapeHtml(trades)}건</span>
-              ${aliases.map(a => `<span class="alias">#${escapeHtml(a)}</span>`).join('')}
-            </div>
-          </button>
+          </div>
         `;
-      }).join('');
-
-      setStatus('목록에서 단지를 선택하세요.');
-
-      listEl.querySelectorAll('button.item').forEach((button) => {
-        button.addEventListener('click', () => {
-          if (isSelected) return;
-          const item = candidates[Number(button.getAttribute('data-index'))];
-          if (item) selectCandidate(item, button);
-        });
-      });
+      }).join("");
     }
 
-    function renderFromPayload(payload) {
-      const data = payload?.structuredContent || payload;
-      if (data?.candidates) renderCandidates(data.candidates, data.fallbackMode);
+    function renderFromPayload(toolOutput) {
+      if (!toolOutput) return;
+      const data = toolOutput.structuredContent || toolOutput;
+      if (data && data.listings) {
+        renderListings(data.listings);
+      }
     }
 
     // --- Message Listeners ---
     window.addEventListener('message', (event) => {
       if (event.source !== window.parent) return;
       const message = event.data;
-      if (message?.method === 'ui/notifications/tool-result') {
+      if (!message || message.jsonrpc !== '2.0') return;
+      if (message.method === 'ui/notifications/tool-result') {
         renderFromPayload(message.params);
       }
-    });
+    }, { passive: true });
 
-    // ChatGPT SDK: toolOutput가 스크립트 실행 후 설정될 수 있으므로 set_globals 이벤트도 수신
-    window.addEventListener('openai:set_globals', (event) => {
+    window.addEventListener("openai:set_globals", (event) => {
       renderFromPayload(event.detail?.globals?.toolOutput);
     }, { passive: true });
 
-    try { if (window?.openai?.toolOutput) renderFromPayload(window.openai.toolOutput); } catch (e) { }
+    try {
+      if (window?.openai?.toolOutput) {
+        renderFromPayload(window.openai.toolOutput);
+      }
+    } catch (e) { }
 
     // --- Local Dev Flow Simulator ---
     if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
@@ -447,19 +344,19 @@
       devPanel.id = 'dev-test-overlay';
       devPanel.innerHTML = `
         <div id="dev-test-panel">
-          <b>🛠️ Local Candidate Test</b>
-          <button onclick="mockCandidates()">샘플 데이터 주입</button>
+          <b>🛠️ Local Listings Test</b>
+          <button onclick="mockListings()">샘플 데이터 주입</button>
         </div>
       `;
       document.body.appendChild(devPanel);
 
-      window.mockCandidates = () => {
+      window.mockListings = () => {
         renderFromPayload({
-          candidates: [
-            { apartmentName: "화인아파트", legalDong: "정자동", totalTrades: 150, districtCode: "41135" },
-            { apartmentName: "유천화인", legalDong: "금곡동", totalTrades: 80, districtCode: "41135" }
-          ],
-          fallbackMode: "none"
+          listings: [
+            { title: "정자동 화인아파트 84㎡", city: "경기 성남시분당구", type: "매매", price: "매매 12.5억" },
+            { title: "정자동 화인아파트 84㎡", city: "경기 성남시분당구", type: "전세", price: "전세 7.2억" },
+            { title: "금곡동 유천화인 59㎡", city: "경기 성남시분당구", type: "매매", price: "매매 9.8억" }
+          ]
         });
       };
     }

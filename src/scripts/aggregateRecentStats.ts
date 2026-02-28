@@ -9,6 +9,21 @@ const main = async (): Promise<void> => {
   await withOracleConnection(async (connection) => {
     console.log(`[AGGREGATE] Starting 1-month average calculation (lookback: ${lookbackDays} days)...`);
 
+    // Find the max date from both tables to use as the base date instead of SYSDATE
+    const maxDateResult = await connection.execute(`
+      SELECT MAX(latest_dt) as max_dt FROM (
+        SELECT MAX(traded_at) as latest_dt FROM re_sale_transactions
+        UNION ALL
+        SELECT MAX(contracted_at) as latest_dt FROM re_rent_transactions
+      )
+    `);
+    
+    // Fallback to SYSDATE if there's no data
+    const maxDate = (maxDateResult.rows?.[0] as any)?.MAX_DT;
+    const baseDateExp = maxDate ? `TO_DATE('${maxDate.toISOString().slice(0,10)}', 'YYYY-MM-DD')` : `SYSDATE`;
+
+    console.log(`[AGGREGATE] Base date for calculation: ${maxDate ? maxDate.toISOString().slice(0,10) : 'SYSDATE'}`);
+
     // 1. Sales Aggregation
     const saleResult = await connection.execute(`
       SELECT 
@@ -17,7 +32,7 @@ const main = async (): Promise<void> => {
         ROUND(AVG(price_krw)) as avg_price,
         COUNT(*) as tx_count
       FROM re_sale_transactions
-      WHERE traded_at >= SYSDATE - :days
+      WHERE traded_at >= ${baseDateExp} - :days
       GROUP BY region, district_code, legal_dong, apartment_name, TRUNC(area_m2)
     `, { days: lookbackDays });
 
@@ -44,7 +59,7 @@ const main = async (): Promise<void> => {
         ROUND(AVG(monthly_rent_krw)) as avg_rent,
         COUNT(*) as tx_count
       FROM re_rent_transactions
-      WHERE contracted_at >= SYSDATE - :days
+      WHERE contracted_at >= ${baseDateExp} - :days
       GROUP BY region, district_code, legal_dong, apartment_name, rent_type, TRUNC(area_m2)
     `, { days: lookbackDays });
 

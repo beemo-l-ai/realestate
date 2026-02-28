@@ -802,7 +802,7 @@ export const upsertRentTransactions = async (records: RentRecord[]): Promise<voi
   });
 };
 
-export const executeSelectQuery = async (query: string): Promise<Array<Record<string, unknown>>> => {
+export const executeSelectQuery = async (query: string, binds: Record<string, any> = {}): Promise<Array<Record<string, unknown>>> => {
   await ensureOracleSchema();
 
   const upperQuery = query.trim().toUpperCase();
@@ -812,23 +812,65 @@ export const executeSelectQuery = async (query: string): Promise<Array<Record<st
 
   const forbiddenKeywords = ["INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "TRUNCATE", "GRANT", "REVOKE", "MERGE", "CALL", "BEGIN", "COMMIT", "ROLLBACK"];
   for (const keyword of forbiddenKeywords) {
-    // Basic check for word boundaries to avoid accidentally catching inside column names, 
-    // though strict enough for an LLM-facing tool.
     if (new RegExp(`\\b${keyword}\\b`).test(upperQuery)) {
       throw new Error(`Query contains forbidden keyword: ${keyword}. Only SELECTs are allowed.`);
     }
   }
 
   return await withOracleConnection(async (connection) => {
-    // For safety and performance, enforce a max limit at DB level since LLMs might forget
     const safeQuery = `
       SELECT * FROM (
         ${query}
       )
       FETCH FIRST 100 ROWS ONLY
     `;
-    const result = await connection.execute(safeQuery);
+    const result = await connection.execute(safeQuery, binds);
     return (result.rows ?? []) as Array<Record<string, unknown>>;
   });
 };
+
+export const upsertRecentAreaStats = async (stats: any[]): Promise<void> => {
+  if (stats.length === 0) return;
+  await ensureOracleSchema();
+
+  await withOracleConnection(async (connection) => {
+    const sql = `
+      MERGE INTO re_recent_area_stats t
+      USING (
+        SELECT
+          :id AS id,
+          :region AS region,
+          :district_code AS district_code,
+          :legal_dong AS legal_dong,
+          :apartment_name AS apartment_name,
+          :area_m2 AS area_m2,
+          :trade_type AS trade_type,
+          :avg_price_krw AS avg_price_krw,
+          :avg_deposit_krw AS avg_deposit_krw,
+          :avg_monthly_rent_krw AS avg_monthly_rent_krw,
+          :tx_count AS tx_count
+        FROM dual
+      ) s
+      ON (t.id = s.id)
+      WHEN MATCHED THEN UPDATE SET
+        t.avg_price_krw = s.avg_price_krw,
+        t.avg_deposit_krw = s.avg_deposit_krw,
+        t.avg_monthly_rent_krw = s.avg_monthly_rent_krw,
+        t.tx_count = s.tx_count,
+        t.updated_at = SYSTIMESTAMP
+      WHEN NOT MATCHED THEN INSERT (
+        id, region, district_code, legal_dong, apartment_name,
+        area_m2, trade_type, avg_price_krw, avg_deposit_krw,
+        avg_monthly_rent_krw, tx_count
+      ) VALUES (
+        s.id, s.region, s.district_code, s.legal_dong, s.apartment_name,
+        s.area_m2, s.trade_type, s.avg_price_krw, s.avg_deposit_krw,
+        s.avg_monthly_rent_krw, s.tx_count
+      )
+    `;
+
+    await connection.executeMany(sql, stats, { autoCommit: true });
+  });
+};
+
 

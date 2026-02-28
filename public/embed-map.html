@@ -108,20 +108,43 @@
     const params = new URLSearchParams(window.location.search);
     const key = '__KAKAO_KEY__';
     const address = params.get('address');
-    const title = params.get('title') || address;
+    const addressesJson = params.get('addresses');
+    const statsJson = params.get('stats');
+    let addresses = [];
+    let stats = [];
+
+    if (addressesJson) {
+      try {
+        addresses = JSON.parse(addressesJson);
+      } catch (e) {
+        console.error("Failed to parse addresses JSON", e);
+      }
+    } else if (address) {
+      addresses = [address];
+    }
+
+    if (statsJson) {
+      try {
+        stats = JSON.parse(statsJson);
+      } catch (e) {
+        console.error("Failed to parse stats JSON", e);
+      }
+    }
+
+    const title = params.get('title') || addresses[0] || '';
     const mapEl = document.getElementById('map');
 
     const renderTextState = (message) => {
       mapEl.innerHTML = `<div class="loading"><div>${message}</div></div>`;
     };
 
-    const renderFallback = () => {
-      const kakaoUrl = `https://map.kakao.com/link/search/${encodeURIComponent(address || '')}`;
+    const renderFallback = (addr) => {
+      const kakaoUrl = `https://map.kakao.com/link/search/${encodeURIComponent(addr || '')}`;
       mapEl.innerHTML = `
         <div class="fallback">
           <div class="fallback-card">
             <div class="fallback-title">정확한 위치를 찾지 못했습니다</div>
-            <div class="desc">주소: ${String(address || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+            <div class="desc">주소: ${String(addr || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
             <a class="btn" href="${kakaoUrl}" target="_blank" rel="noreferrer">카카오맵에서 직접 열기</a>
           </div>
         </div>
@@ -130,7 +153,7 @@
 
     if (!key) {
       renderTextState('카카오맵 API 키가 설정되지 않았습니다.');
-    } else if (!address) {
+    } else if (addresses.length === 0) {
       renderTextState('주소 정보가 없습니다.');
     } else {
       const script = document.createElement('script');
@@ -145,30 +168,80 @@
           });
           const geocoder = new kakao.maps.services.Geocoder();
           const places = new kakao.maps.services.Places();
+          const bounds = new kakao.maps.LatLngBounds();
+          let markerCount = 0;
 
-          const setMarker = (lat, lng, name) => {
-            const center = new kakao.maps.LatLng(lat, lng);
-            map.setCenter(center);
-            const marker = new kakao.maps.Marker({ position: center, map });
-            const info = new kakao.maps.InfoWindow({
-              content: `<div style="padding:5px 8px;font-size:12px;font-weight:700;white-space:nowrap;">${String(name).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>`
-            });
-            info.open(map, marker);
-          };
-
-          geocoder.addressSearch(address, (result, status) => {
-            if (status === kakao.maps.services.Status.OK && result.length) {
-              setMarker(result[0].y, result[0].x, title);
-              return;
+          const setMarker = (lat, lng, name, addr) => {
+            const pos = new kakao.maps.LatLng(lat, lng);
+            const marker = new kakao.maps.Marker({ position: pos, map });
+            
+            // Find stats for this address
+            const addrStats = stats.find(s => s.address === addr);
+            let statsHtml = '';
+            if (addrStats && addrStats.data && addrStats.data.length > 0) {
+              statsHtml = `<div style="margin-top:8px; padding-top:6px; border-top:1px solid #f1f5f9;">
+                <div style="font-size:11px; color:#64748b; margin-bottom:4px; font-weight:500;">최근 1개월 평균</div>`;
+              addrStats.data.forEach(d => {
+                const typeLabel = d.type === 'SALE' ? '매매' : (d.type === 'JEONSE' ? '전세' : '월세');
+                let priceLabel = '';
+                if (d.type === 'SALE') {
+                  priceLabel = `${(d.avgPrice / 100000000).toFixed(1)}억`;
+                } else if (d.type === 'JEONSE') {
+                  priceLabel = `${(d.avgDeposit / 100000000).toFixed(1)}억`;
+                } else {
+                  priceLabel = `${(d.avgDeposit / 10000).toFixed(0)}/${(d.avgRent / 10000).toFixed(0)}만`;
+                }
+                statsHtml += `<div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:2px; white-space:nowrap;">
+                  <span style="font-size:12px; font-weight:600; color:#334155;">${typeLabel} (${Math.round(d.area)}㎡)</span>
+                  <span style="font-size:12px; color:#0ea5e9; font-weight:800; min-width:44px; text-align:right;">${priceLabel}</span>
+                </div>`;
+              });
+              statsHtml += `</div>`;
             }
 
-            places.keywordSearch(address, (result2, status2) => {
-              if (status2 === kakao.maps.services.Status.OK && result2.length) {
-                setMarker(result2[0].y, result2[0].x, result2[0].place_name || title);
-              } else {
-                renderFallback();
-              }
+            const info = new kakao.maps.InfoWindow({
+              content: `<div style="padding:12px; font-family: -apple-system, sans-serif; min-width:180px; max-width:240px; line-height:1.4;">
+                <div style="font-size:13px; font-weight:800; color:#111; margin-bottom:4px; word-break:keep-all;">${String(name).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+                ${statsHtml}
+              </div>`
             });
+            info.open(map, marker);
+            bounds.extend(pos);
+            markerCount++;
+          };
+
+          const searchLocation = (addr) => {
+            return new Promise((resolve) => {
+              geocoder.addressSearch(addr, (result, status) => {
+                if (status === kakao.maps.services.Status.OK && result.length) {
+                  setMarker(result[0].y, result[0].x, addresses.length === 1 ? title : addr, addr);
+                  resolve(true);
+                  return;
+                }
+
+                places.keywordSearch(addr, (result2, status2) => {
+                  if (status2 === kakao.maps.services.Status.OK && result2.length) {
+                    setMarker(result2[0].y, result2[0].x, result2[0].place_name || addr, addr);
+                    resolve(true);
+                  } else {
+                    resolve(false);
+                  }
+                });
+              });
+            });
+          };
+
+          const allSearches = addresses.map(addr => searchLocation(addr));
+          Promise.all(allSearches).then((results) => {
+            if (markerCount > 0) {
+              map.setBounds(bounds);
+              // if only one marker, set a reasonable level
+              if (markerCount === 1) {
+                map.setLevel(4);
+              }
+            } else {
+              renderFallback(addresses[0]);
+            }
           });
         });
       };

@@ -4,6 +4,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' *; frame-src 'self' *; connect-src 'self' *; img-src 'self' data: *;">
   <title>아파트 후보 선택</title>
   <style>
     /* ===== global-ui (인라인) ===== */
@@ -137,7 +138,7 @@
 
     .body {
       padding: 12px;
-      flex: 1;
+      max-height: 340px;
       overflow-y: auto;
       display: grid;
       gap: 8px;
@@ -186,10 +187,23 @@
       gap: 6px;
     }
 
-    .item:hover {
+    .item:hover:not(:disabled) {
       border-color: var(--accent);
       background: #f0f9ff;
       transform: translateY(-1px);
+    }
+
+    .item:disabled {
+      cursor: default;
+      opacity: 0.45;
+      pointer-events: none;
+    }
+
+    .item.selected {
+      border-color: var(--accent);
+      background: #e0f2fe;
+      opacity: 1;
+      pointer-events: none;
     }
 
     .name-row {
@@ -241,11 +255,31 @@
       background: #f8fbff;
       border-top: 1px solid var(--line);
       color: #4b5563;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
     }
 
     .status.empty {
       color: #ef4444;
       background: #fef2f2;
+    }
+
+    .status .mini-spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid #cbd5e1;
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
     }
 
     .hidden {
@@ -296,29 +330,42 @@
       return String(v || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
     }
 
+    let isSelected = false;
+
     function setStatus(msg, type) {
       if (!msg) { statusEl.classList.add('hidden'); return; }
       statusEl.className = `status ${type === 'empty' ? 'empty' : ''}`;
-      statusEl.textContent = msg;
+      if (type === 'loading') {
+        statusEl.innerHTML = `<span class="mini-spinner"></span><span>${msg}</span>`;
+      } else {
+        statusEl.textContent = msg;
+      }
       statusEl.classList.remove('hidden');
     }
 
-    async function selectCandidate(item) {
-      const selectedText = `${item.legalDong || ''} ${item.apartmentName || ''}`.trim();
-      setStatus(`${selectedText} 선택됨. 조회를 재개합니다...`, 'info');
+    async function selectCandidate(item, btnEl) {
+      if (isSelected) return;
+      isSelected = true;
 
+      const selectedText = `${item.legalDong || ''} ${item.apartmentName || ''}`.trim();
+
+      // Disable all buttons & highlight the selected one
       const buttons = listEl.querySelectorAll('button.item');
-      buttons.forEach(btn => btn.disabled = true);
+      buttons.forEach(btn => {
+        btn.disabled = true;
+        if (btn === btnEl) btn.classList.add('selected');
+      });
+
+      setStatus(`${selectedText} 선택됨 · 조회를 재개하는 중...`, 'loading');
 
       try {
         const followupText = `${selectedText} 단지로 선택했어. 방금 전 요청을 이 단지 기준으로 바로 계속 진행해줘.`.trim();
 
-        // sendFollowUpMessage: SDK는 { prompt } 객체를 요구함 (문자열 직접 전달 시 'No prompt provided' 에러)
         if (typeof window?.openai?.sendFollowUpMessage === 'function') {
           await window.openai.sendFollowUpMessage({ prompt: followupText });
         }
 
-        setStatus('선택 완료! 채팅창을 확인해주세요.');
+        setStatus(`${selectedText} 선택 완료 · 채팅에서 결과를 확인하세요.`);
 
         // --- Local Simulator logic ---
         if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
@@ -326,7 +373,7 @@
         }
       } catch (err) {
         setStatus('전달 오류: ' + err.message, 'empty');
-        buttons.forEach(btn => btn.disabled = false);
+        // Don't re-enable — keep locked to prevent duplicate sends
       }
     }
 
@@ -366,8 +413,9 @@
 
       listEl.querySelectorAll('button.item').forEach((button) => {
         button.addEventListener('click', () => {
+          if (isSelected) return;
           const item = candidates[Number(button.getAttribute('data-index'))];
-          if (item) selectCandidate(item);
+          if (item) selectCandidate(item, button);
         });
       });
     }

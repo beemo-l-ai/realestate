@@ -72,6 +72,22 @@ const DDLS = [
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
     CONSTRAINT chk_re_rent_agg_type CHECK (rent_type IN ('JEONSE', 'WOLSE'))
   )`,
+  `CREATE TABLE re_recent_area_stats (
+    id VARCHAR2(320) PRIMARY KEY,
+    region VARCHAR2(12) NOT NULL,
+    district_code VARCHAR2(10) NOT NULL,
+    legal_dong VARCHAR2(120) NOT NULL,
+    apartment_name VARCHAR2(200) NOT NULL,
+    area_m2 NUMBER(8,2) NOT NULL,
+    trade_type VARCHAR2(10) NOT NULL,
+    avg_price_krw NUMBER(15) NOT NULL,
+    avg_deposit_krw NUMBER(15),
+    avg_monthly_rent_krw NUMBER(12),
+    tx_count NUMBER(10) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
+    CONSTRAINT chk_re_recent_trade_type CHECK (trade_type IN ('SALE', 'JEONSE', 'WOLSE'))
+  )`,
+  "CREATE INDEX ix_re_recent_stats_apt ON re_recent_area_stats(district_code, apartment_name, area_m2, trade_type)",
   "CREATE INDEX ix_re_sale_ym_district ON re_sale_monthly_aggregates(year_month, district_code)",
   "CREATE INDEX ix_re_sale_district_apt_ym ON re_sale_monthly_aggregates(district_code, apartment_name, year_month)",
   "CREATE INDEX ix_re_sale_tx_district_date ON re_sale_transactions(district_code, traded_at DESC)",

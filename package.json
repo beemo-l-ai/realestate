@@ -16,7 +16,9 @@
     "restart:chatgpt": "pkill -f \"tsx src/server.js|startNgrok.js|concurrently|ngrok.*3000\" 2>/dev/null || true; pids=$(lsof -t -iTCP:3000 -sTCP:LISTEN); [ -n \"$pids\" ] && kill -9 $pids 2>/dev/null || true; sleep 1; lsof -nP -iTCP:3000 -sTCP:LISTEN || true; npm run dev:chatgpt",
     "resolve:main-conflicts": "tsx src/scripts/resolveMainConflicts.ts",
     "dev:chatgpt": "concurrently -k \"tsx src/server.js\" \"node src/scripts/startNgrok.js\"",
-    "db:browser": "tsx src/scripts/oracleBrowser.ts"
+    "db:browser": "tsx src/scripts/oracleBrowser.ts",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --headed"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "^1.1.1",
@@ -28,10 +30,12 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@types/cors": "^2.8.19",
     "@types/node": "^22.10.1",
     "concurrently": "^9.2.1",
     "nodemon": "^3.1.14",
+    "playwright": "^1.58.2",
     "tsx": "^4.21.0",
     "typescript": "^5.7.2"
   }

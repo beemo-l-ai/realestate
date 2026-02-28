@@ -802,6 +802,151 @@ export const upsertRentTransactions = async (records: RentRecord[]): Promise<voi
   });
 };
 
+export const searchProperties = async (input: {
+  tradeType: "SALE" | "JEONSE" | "WOLSE";
+  districtCodes?: string[];
+  legalDongs?: string[];
+  apartmentName?: string;
+  minPriceKrw?: number;
+  maxPriceKrw?: number;
+  minAreaM2?: number;
+  maxAreaM2?: number;
+  fromDate?: string;
+  toDate?: string;
+  limit?: number;
+}) => {
+  await ensureOracleSchema();
+
+  const conditions: string[] = [];
+  const binds: Record<string, unknown> = {};
+
+  const isSale = input.tradeType === "SALE";
+  const tableName = isSale ? "re_sale_transactions" : "re_rent_transactions";
+  const dateCol = isSale ? "traded_at" : "contracted_at";
+
+  if (input.districtCodes && input.districtCodes.length > 0) {
+    const placeholders = input.districtCodes.map((_, i) => `:dc_${i}`);
+    conditions.push(`district_code IN (${placeholders.join(", ")})`);
+    input.districtCodes.forEach((dc, i) => { binds[`dc_${i}`] = dc; });
+  }
+
+  if (input.legalDongs && input.legalDongs.length > 0) {
+    const placeholders = input.legalDongs.map((_, i) => `:ld_${i}`);
+    conditions.push(`legal_dong IN (${placeholders.join(", ")})`);
+    input.legalDongs.forEach((ld, i) => { binds[`ld_${i}`] = ld; });
+  }
+
+  if (input.apartmentName) {
+    conditions.push(`REPLACE(apartment_name, ' ', '') LIKE '%' || REPLACE(:apt_name, ' ', '') || '%'`);
+    binds.apt_name = input.apartmentName;
+  }
+
+  if (typeof input.minAreaM2 === "number") {
+    conditions.push(`area_m2 >= :min_area`);
+    binds.min_area = input.minAreaM2;
+  }
+  
+  if (typeof input.maxAreaM2 === "number") {
+    conditions.push(`area_m2 <= :max_area`);
+    binds.max_area = input.maxAreaM2;
+  }
+
+  if (isSale) {
+    if (typeof input.minPriceKrw === "number") {
+      conditions.push(`price_krw >= :min_price`);
+      binds.min_price = input.minPriceKrw;
+    }
+    if (typeof input.maxPriceKrw === "number") {
+      conditions.push(`price_krw <= :max_price`);
+      binds.max_price = input.maxPriceKrw;
+    }
+  } else {
+    conditions.push(`rent_type = :rent_type`);
+    binds.rent_type = input.tradeType;
+    if (typeof input.minPriceKrw === "number") {
+      conditions.push(`deposit_krw >= :min_price`);
+      binds.min_price = input.minPriceKrw;
+    }
+    if (typeof input.maxPriceKrw === "number") {
+      conditions.push(`deposit_krw <= :max_price`);
+      binds.max_price = input.maxPriceKrw;
+    }
+  }
+
+  if (input.fromDate) {
+    conditions.push(`${dateCol} >= TO_DATE(:from_date, 'YYYY-MM-DD')`);
+    binds.from_date = input.fromDate;
+  }
+  
+  if (input.toDate) {
+    conditions.push(`${dateCol} <= TO_DATE(:to_date, 'YYYY-MM-DD')`);
+    binds.to_date = input.toDate;
+  }
+
+  return await withOracleConnection(async (connection) => {
+    const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+    
+    const countResult = await connection.execute(
+      `SELECT COUNT(*) as total_count FROM ${tableName} ${whereClause}`,
+      binds
+    );
+    const totalCount = Number((countResult.rows?.[0] as any)?.TOTAL_COUNT || 0);
+
+    const priceCol = isSale ? "price_krw" : "deposit_krw";
+    const summaryResult = await connection.execute(
+      `SELECT 
+         MIN(${priceCol}) as min_price, 
+         MAX(${priceCol}) as max_price,
+         AVG(${priceCol}) as avg_price,
+         MAX(TO_CHAR(${dateCol}, 'YYYY-MM-DD')) as latest_date
+       FROM ${tableName} ${whereClause}`,
+      binds
+    );
+    const summaryRow = summaryResult.rows?.[0] as any;
+    
+    const limit = Math.max(1, Math.min(100, input.limit || 20));
+
+    const cols = isSale 
+      ? `region, district_code, legal_dong, apartment_name, area_m2, price_krw, TO_CHAR(traded_at, 'YYYY-MM-DD') as deal_date`
+      : `region, district_code, legal_dong, apartment_name, area_m2, deposit_krw, monthly_rent_krw, TO_CHAR(contracted_at, 'YYYY-MM-DD') as deal_date`;
+
+    const result = await connection.execute(
+      `
+      SELECT ${cols}
+      FROM ${tableName}
+      ${whereClause}
+      ORDER BY ${dateCol} DESC
+      FETCH FIRST ${limit} ROWS ONLY
+      `,
+      binds
+    );
+
+    const rows = (result.rows ?? []).map((row: any) => ({
+      region: String(row.REGION),
+      districtCode: String(row.DISTRICT_CODE),
+      legalDong: String(row.LEGAL_DONG),
+      apartmentName: String(row.APARTMENT_NAME),
+      areaM2: Number(row.AREA_M2),
+      tradeType: input.tradeType,
+      priceKrw: isSale ? Number(row.PRICE_KRW) : undefined,
+      depositKrw: !isSale ? Number(row.DEPOSIT_KRW) : undefined,
+      monthlyRentKrw: !isSale ? Number(row.MONTHLY_RENT_KRW) : undefined,
+      dealDate: String(row.DEAL_DATE)
+    }));
+
+    return {
+        summary: {
+          totalCount,
+          latestDate: summaryRow?.LATEST_DATE || null,
+          avgPriceKrw: summaryRow?.AVG_PRICE ? Number(summaryRow.AVG_PRICE) : undefined,
+          minPriceKrw: summaryRow?.MIN_PRICE ? Number(summaryRow.MIN_PRICE) : undefined,
+          maxPriceKrw: summaryRow?.MAX_PRICE ? Number(summaryRow.MAX_PRICE) : undefined,
+        },
+      rows
+    };
+  });
+};
+
 export const executeSelectQuery = async (query: string, binds: Record<string, any> = {}): Promise<Array<Record<string, unknown>>> => {
   await ensureOracleSchema();
 
@@ -872,5 +1017,4 @@ export const upsertRecentAreaStats = async (stats: any[]): Promise<void> => {
     await connection.executeMany(sql, stats, { autoCommit: true });
   });
 };
-
 

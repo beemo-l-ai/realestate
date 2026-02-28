@@ -9,17 +9,47 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { RESOURCE_MIME_TYPE, registerAppResource, registerAppTool } from "@modelcontextprotocol/ext-apps/server";
-import { getLatestSaleTransactions, getLatestRentTransactions, executeSelectQuery, searchApartmentMetadata } from "./lib/store.js";
+import { getLatestSaleTransactions, getLatestRentTransactions, executeSelectQuery, searchApartmentMetadata, searchProperties } from "./lib/store.js";
 import { DISTRICT_MAP } from "./lib/districts.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "../public");
 
+const SEARCH_PROPERTIES_DEFAULT_LIMIT = 20;
+const SEARCH_PROPERTIES_MAX_LIMIT = 100;
+const MAX_APARTMENT_SEARCH_LIMIT = 8;
+const MAX_KEYWORD_SEARCH_CANDIDATES = 40;
+const APARTMENT_SEARCH_FALLBACK_LIMIT = 200;
+const KRW_PER_EOK = 100_000_000;
 
-const resolveDistrictCode = (nameOrCode) => {
-  if (!nameOrCode) return undefined;
-  if (/^\\d{5}$/.test(nameOrCode)) return nameOrCode;
-  return DISTRICT_MAP[nameOrCode];
+const normalizeText = (value) => String(value || "").trim();
+
+const normalizeLookupKey = (value) =>
+  normalizeText(value)
+    .replace(/\s+/g, "")
+    .replace(/[()\-_.·]/g, "")
+    .toLowerCase();
+
+const dedupePreservingOrder = (items) => {
+  const seen = new Set();
+  const output = [];
+
+  for (const item of items) {
+    const value = normalizeText(item);
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    output.push(value);
+  }
+
+  return output;
+};
+
+const clampLimit = (value, fallback) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  const rounded = Math.trunc(numeric);
+  if (rounded <= 0) return fallback;
+  return Math.min(SEARCH_PROPERTIES_MAX_LIMIT, Math.max(1, rounded));
 };
 
 const wonToEok = (amount) => `${(amount / 100_000_000).toFixed(2)}억`;
@@ -53,6 +83,21 @@ const APARTMENT_ALIAS_RULES = [
     aliases: ["청솔마을2단지유천화인아파트", "유천화인아파트", "유천화인"],
   },
 ];
+
+const DISTRICT_NAME_CODE_BY_KEY = Object.fromEntries(
+  Object.entries(DISTRICT_MAP).map(([name, code]) => [normalizeLookupKey(name), code]),
+);
+
+const LINE_DISTRICT_KEYWORD_MAP = {
+  신분당선: ["11680", "41135", "41465"],
+};
+
+const LINE_DISTRICT_CODE_BY_KEY = Object.fromEntries(
+  Object.entries(LINE_DISTRICT_KEYWORD_MAP).map(([keyword, codes]) => [
+    normalizeLookupKey(keyword),
+    dedupePreservingOrder(codes).filter((code) => /^\d{5}$/.test(code)),
+  ]),
+);
 
 const normalizeForMatch = (value) =>
   String(value || "")
@@ -96,6 +141,131 @@ const scoreCandidate = (candidate, variants, legalDong) => {
 
   if (legalDong && candidate.legalDong === legalDong) score += 40;
   return score;
+};
+
+const resolveDistrictCodes = (districtCodes = []) => {
+  if (!Array.isArray(districtCodes)) return [];
+
+  const resolved = [];
+
+  for (const item of districtCodes) {
+    const normalized = normalizeLookupKey(item);
+    if (!normalized) continue;
+
+    if (/^\d{5}$/.test(normalized)) {
+      resolved.push(normalized);
+      continue;
+    }
+
+    const nameCode = DISTRICT_NAME_CODE_BY_KEY[normalized];
+    if (nameCode) {
+      resolved.push(nameCode);
+      continue;
+    }
+
+    const lineCodes = LINE_DISTRICT_CODE_BY_KEY[normalized];
+    if (lineCodes?.length) {
+      resolved.push(...lineCodes);
+    }
+  }
+
+  return dedupePreservingOrder(resolved);
+};
+
+const normalizeLegalDongs = (legalDongs = []) =>
+  dedupePreservingOrder((legalDongs || [])
+    .filter((value) => typeof value === "string")
+    .map((value) => normalizeText(value))
+    .filter((value) => value));
+
+const formatAddressForMap = (row) => {
+  const tokens = [
+    normalizeText(row.region),
+    normalizeText(row.legalDong),
+    normalizeText(row.apartmentName),
+  ];
+  return tokens.join(" ").trim().replace(/\s+/g, " ");
+};
+
+const buildAddressesForMap = (rows) => {
+  return dedupePreservingOrder(rows.map((row) => formatAddressForMap(row)).filter(Boolean));
+};
+
+const toKrwFromEok = (eokValue) => {
+  const numeric = Number(eokValue);
+  if (!Number.isFinite(numeric)) return undefined;
+  return Math.round(numeric * KRW_PER_EOK);
+};
+
+const tradeTypeLabelForWidget = (tradeType) => {
+  if (tradeType === "SALE") return "매매";
+  if (tradeType === "JEONSE") return "전세";
+  if (tradeType === "WOLSE") return "월세";
+  return "";
+};
+
+const choosePriceRange = (priceKrw, priceEok) => {
+  if (typeof priceKrw === "number") return priceKrw;
+  if (typeof priceEok === "number") return toKrwFromEok(priceEok);
+  return undefined;
+};
+
+const buildSearchPropertiesWidgetUrl = ({
+  addresses,
+  title,
+  tradeType,
+  minPriceKrw,
+  maxPriceKrw,
+  minAreaM2,
+  maxAreaM2
+}) => {
+  if (!addresses || addresses.length === 0) return null;
+
+  const widgetDomain = /^https?:\/\//.test(WIDGET_DOMAIN) ? WIDGET_DOMAIN : `https://${WIDGET_DOMAIN}`;
+  const url = new URL("/embed/map", widgetDomain);
+  const safeAddresses = addresses.slice(0, 20);
+
+  url.searchParams.set("addresses", JSON.stringify(safeAddresses));
+  url.searchParams.set("title", title || "실거래 지도");
+  if (tradeType) {
+    url.searchParams.set("searchType", tradeTypeLabelForWidget(tradeType));
+  }
+  if (typeof minPriceKrw === "number") {
+    url.searchParams.set("minPrice", String(minPriceKrw));
+  }
+  if (typeof maxPriceKrw === "number") {
+    url.searchParams.set("maxPrice", String(maxPriceKrw));
+  }
+  if (typeof minAreaM2 === "number") {
+    url.searchParams.set("minArea", String(minAreaM2));
+  }
+  if (typeof maxAreaM2 === "number") {
+    url.searchParams.set("maxArea", String(maxAreaM2));
+  }
+
+  return url.toString();
+};
+
+const isPropertyListingQuery = (query) => {
+  const upper = String(query || "").toUpperCase();
+  const usesTransactionTable = /\bRE_SALE_TRANSACTIONS\b|\bRE_RENT_TRANSACTIONS\b/.test(upper);
+  if (!usesTransactionTable) return false;
+
+  const hasAnalyticsOrRanking = /COUNT\s*\(|AVG\s*\(|SUM\s*\(|MIN\s*\(|MAX\s*\(|MEDIAN\s*\(|GROUP\s+BY|HAVING|ORDER\s+BY|FETCH\s+FIRST|LIMIT|RANK\(|DENSE_RANK\(|ROW_NUMBER\(|OVER\s*\(|PARTITION/i.test(upper);
+  return !hasAnalyticsOrRanking;
+};
+
+const sortCandidates = (candidateRows, variants, legalDong) =>
+  candidateRows
+    .map((row) => ({ ...row, aliases: getApartmentAliases(row.apartmentName) }))
+    .sort((a, b) => scoreCandidate(b, variants, legalDong) - scoreCandidate(a, variants, legalDong))
+    .slice(0, MAX_APARTMENT_SEARCH_LIMIT);
+
+const getTradeTypeForMap = (displayType) => {
+  if (displayType === "매매") return "SALE";
+  if (displayType === "전세") return "JEONSE";
+  if (displayType === "월세") return "WOLSE";
+  return null;
 };
 
 
@@ -205,36 +375,157 @@ function createRealestateServer() {
   );
 
   server.registerTool(
+    "search_properties",
+    {
+      title: "부동산 실거래/매물 조건부 검색 (데이터 조회용)",
+      description: `조건에 맞는 매물/실거래 데이터를 안전하게 검색합니다. (매매, 전월세 모두 지원)
+"~ 조건에 맞는 매물 찾아줘", "최근 실거래 사례 보여줘" 등의 요청에 **가장 먼저 사용**해야 하는 핵심 도구입니다.
+
+여러 지역을 배열로 넘겨 한 번에 검색할 수 있습니다. (예: 신분당선 라인 = 강남구, 분당구, 수지구)
+이 도구는 데이터를 조사하기 위한 용도입니다. 검색 결과를 모은 뒤 반드시 마지막에 단 한 번만 'get_location_ui'를 호출하여 사용자에게 지도를 띄워주세요.
+'addressesForMap' 필드와 'widgetUrl'이 제공되며 각각 지도 UI 호출 또는 바로 링크 표시에 사용할 수 있습니다.
+'지역(districtName, districtCodes), 법정동(legalDong/legalDongs), 가격(원/억) 모두 지원합니다.
+
+답변 시 "실시간 매물"이라는 표현 대신 "실거래 사례 기준" 또는 "실거래 사례 기반 추천"으로 명시하세요.`,
+      inputSchema: {
+        tradeType: z.enum(["SALE", "JEONSE", "WOLSE"]).describe("매매, 전세, 월세"),
+        region: z.string().optional().describe("지역 문자열 (예: '분당구', '성남시'). districtName/region 중 하나로 전달"),
+        districtName: z.string().optional().describe("구 단위 지역명 (예: '분당구', '강남구', '신분당선')"),
+        districtCodes: z.array(z.string()).optional().describe("시군구 코드/권역 키워드/시구명 배열 (예: [\"11680\", \"41135\", \"신분당선\"])"),
+        legalDong: z.string().optional().describe("법정동 단일 이름 (예: '구미동')"),
+        legalDongs: z.array(z.string()).optional().describe("여러 읍면동 법정동 이름 (예: 정자동, 금곡동)"),
+        apartmentName: z.string().optional().describe("정확한 아파트 단지명 일부"),
+        minPriceEok: z.number().optional().describe("최소 매매가/보증금 (단위: 억)"),
+        maxPriceEok: z.number().optional().describe("최대 매매가/보증금 (단위: 억)"),
+        minPriceKrw: z.number().optional().describe("최소 가격/보증금 (단위: 원, 예: 9억 = 900000000)"),
+        maxPriceKrw: z.number().optional().describe("최대 가격/보증금 (단위: 원)"),
+        minAreaM2: z.number().optional().describe("최소 전용면적 (㎡)"),
+        maxAreaM2: z.number().optional().describe("최대 전용면적 (㎡)"),
+        fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("검색 시작일 (YYYY-MM-DD)"),
+        toDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("검색 종료일 (YYYY-MM-DD)"),
+        limit: z.number().int().min(1).max(SEARCH_PROPERTIES_MAX_LIMIT).default(SEARCH_PROPERTIES_DEFAULT_LIMIT).optional().describe("조회할 최대 결과 수 (기본 20, 최대 100)")
+      },
+      _meta: {
+        "openai/toolInvocation/invoking": "조건에 맞는 실거래/매물 검색 중...",
+        "openai/toolInvocation/invoked": "매물 검색 완료"
+      }
+    },
+    async (input) => {
+      try {
+        const resolvedDistrictCodes = resolveDistrictCodes([
+          ...(input.districtCodes || []),
+          ...(input.region ? [input.region] : []),
+          ...(input.districtName ? [input.districtName] : []),
+        ]);
+
+        const legalDongInputs = [
+          ...(input.legalDongs || []),
+          ...(input.legalDong ? [input.legalDong] : [])
+        ];
+
+        const normalizedInput = {
+          ...input,
+          districtCodes: resolvedDistrictCodes,
+          legalDongs: normalizeLegalDongs(legalDongInputs),
+          minPriceKrw: choosePriceRange(input.minPriceKrw, input.minPriceEok),
+          maxPriceKrw: choosePriceRange(input.maxPriceKrw, input.maxPriceEok),
+          limit: clampLimit(input.limit, SEARCH_PROPERTIES_DEFAULT_LIMIT),
+        };
+
+        const result = await searchProperties(normalizedInput);
+        const addressesForMap = buildAddressesForMap(result.rows);
+        const widgetUrl = buildSearchPropertiesWidgetUrl({
+          addresses: addressesForMap,
+          title: `${normalizedInput.tradeType} 조건 검색`,
+          tradeType: normalizedInput.tradeType,
+          minPriceKrw: normalizedInput.minPriceKrw,
+          maxPriceKrw: normalizedInput.maxPriceKrw,
+          minAreaM2: normalizedInput.minAreaM2,
+          maxAreaM2: normalizedInput.maxAreaM2
+        });
+
+        const latestDate = result.summary.latestDate || "N/A";
+        const avgPriceText = result.summary.avgPriceKrw === undefined ? "N/A" : wonToEok(result.summary.avgPriceKrw);
+        const minPriceText = result.summary.minPriceKrw === undefined ? "N/A" : wonToEok(result.summary.minPriceKrw);
+        const maxPriceText = result.summary.maxPriceKrw === undefined ? "N/A" : wonToEok(result.summary.maxPriceKrw);
+        const addressesForMapNotice = addressesForMap.length === 0
+          ? "\n[알림] 위젯 주소 생성이 빈 값입니다. 아파트명/지역 조건을 보강하거나 결과를 사용자에게 확인 요청해 주세요."
+          : "\n[시스템 가이드] 조사된 데이터를 바탕으로 답변을 작성하고, 위젯을 띄우기 위해 제공된 addressesForMap을 사용하여 get_location_ui 도구를 한 번만 호출하세요.";
+        const zeroResultNotice = result.summary.totalCount === 0
+          ? "\n[권고] 0건입니다. 단지명/지역명을 보정한 뒤 `search_apartment_candidates` 또는 `search_apartment_metadata`로 재검색하면 정확도가 높아집니다."
+          : "";
+
+        let text = `조건에 맞는 매물/실거래 데이터를 총 ${result.summary.totalCount}건 찾았습니다.\n`;
+        text += `최근 거래일: ${latestDate}\n`;
+        text += `평균 가격: ${avgPriceText}\n`;
+        text += `가격 범위: ${minPriceText} ~ ${maxPriceText}\n`;
+        text += `조회 행수: ${result.rows.length}\n`;
+        if (widgetUrl) {
+          text += `지도 위젯: ${widgetUrl}\n`;
+        }
+        text += `${addressesForMapNotice}${zeroResultNotice}`;
+
+        return {
+          content: [{ type: "text", text }],
+          structuredContent: {
+            ...result,
+            addressesForMap,
+            widgetUrl
+          }
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: `검색 중 오류 발생: ${err.message}` }],
+          isError: true
+        };
+      }
+    }
+  );
+
+  server.registerTool(
     "query_realestate_db",
     {
       title: "부동산 통계 및 시세 상세 쿼리 (핵심 도구)",
-      description: `부동산 관련 모든 통계(거래건수, 평균가, 최고가 등)와 시세 추이 질문에는 반드시 이 도구를 사용해야 정확한 데이터를 얻을 수 있습니다. 
+      description: `부동산 관련 모든 통계(거래건수, 평균가, 최고가 등)와 시세 추이 질문에는 반드시 이 도구를 사용해야 정확한 데이터를 얻을 수 있습니다.
 
-사용 가능한 주요 테이블 및 스키마 정보:
+[데이터 범위]
+- 기간: 2024-01-01 ~ 2025-12-31 (현재 최신 기준일: 2025-12-31)
+- 지원 지역 (8개 시군구): 11110(종로구), 11680(강남구), 11710(송파구), 41135(분당구), 41281(덕양구), 41465(수지구), 28177(미추홀구), 28237(부평구)
 
-1. re_sale_monthly_aggregates (매매 월별 통계)
-컬럼명: id, region, district_code, apartment_name, year_month, avg_price_krw, median_price_krw, min_price_krw, max_price_krw, tx_count
-* 구 단위 집계 시 apartment_name IS NULL.
+[주요 테이블 및 스키마]
+1. re_sale_monthly_aggregates (매매 월별 통계): id, region, district_code, apartment_name, year_month, avg_price_krw, median_price_krw, min_price_krw, max_price_krw, tx_count
+2. re_rent_monthly_aggregates (전/월세 월별 통계): id, region, district_code, apartment_name, rent_type, year_month, avg_deposit_krw, avg_monthly_rent_krw, tx_count
+3. re_sale_transactions (매매 상세): traded_at, legal_dong, apartment_name, area_m2, floor, price_krw, district_code
+4. re_rent_transactions (전월세 상세)
 
-2. re_rent_monthly_aggregates (전/월세 월별 통계)
-컬럼명: id, region, district_code, apartment_name, rent_type('JEONSE'/'WOLSE'), year_month, avg_deposit_krw, avg_monthly_rent_krw, tx_count
-
-3. re_sale_transactions (매매 상세) / 4. re_rent_transactions (전월세 상세)
-
-지침:
-- 사용자가 "시세 알려줘", "거래량 어때?", "최근 최고가 얼마야?" 라고 물으면 이 도구로 SQL을 실행하세요.
-- 만약 쿼리 결과가 0건이라면, 아파트 이름이 DB와 다를 수 있으므로 즉시 'search_apartment_candidates' 도구를 호출하여 정확한 이름을 확인받으세요.`,
+[필수 지침]
+- "시세 알려줘", "거래량 어때?", "최근 최고가 얼마야?" 등 집계나 통계가 필요한 질문에만 이 도구로 SQL을 실행하세요.
+- 단순 "XX 아파트 9억 이하 매물(실거래) 찾아줘" 같은 목록성 조회는 'search_properties' 도구를 우선 사용하세요.
+- 단지명이 불명확하면 가장 먼저 'search_apartment_candidates' 도구를 호출하여 정확한 이름을 확인받으세요.
+- 답변 시 "실시간 매물"이라는 표현은 피하고 "실거래 사례 기준" 또는 "실거래 사례 기반 추천"으로 명시하세요.`,
       inputSchema: {
-        sqlQuery: z.string().describe("실행할 통계/건수 추출용 Oracle SQL SELECT 구문")
+        sqlQuery: z.string().describe("실행할 통계/건수 추출용 Oracle SQL SELECT 구문"),
+        reason: z.string().min(1).describe("이 SQL이 필요한 이유(한 줄). 단순 목록성 조회 대신 통계/집계·랭킹 목적이어야 합니다.")
       },
       _meta: {
         "openai/toolInvocation/invoking": "부동산 고급 쿼리 분석 중...",
         "openai/toolInvocation/invoked": "쿼리 결과물 획득"
       }
     },
-    async ({ sqlQuery }) => {
+    async ({ sqlQuery, reason }) => {
       queryCount++;
       try {
+        if (isPropertyListingQuery(sqlQuery)) {
+          return {
+            content: [{ 
+              type: "text",
+              text: `[안내] 단순 거래 상세 목록 조회는 'search_properties'로 대체하는 것이 권장됩니다.
+사용자가 요청한 목적: ${normalizeText(reason)}`
+            }],
+            isError: true
+          };
+        }
+
         const rows = await executeSelectQuery(sqlQuery);
         let text = `쿼리 성공. 결과의 총 행 수: ${rows.length}\n` + JSON.stringify(rows, null, 2);
 
@@ -269,6 +560,11 @@ function createRealestateServer() {
     }
   );
 
+  const pickTopCandidates = async (searchParams, keywordVariants, legalDong) => {
+    const rows = await searchApartmentMetadata(searchParams);
+    return sortCandidates(rows, keywordVariants, legalDong);
+  };
+
   const handleApartmentSearch = async ({ keyword, districtCode, legalDong }) => {
     try {
       const baseKeywordVariants = buildKeywordVariants(keyword);
@@ -280,39 +576,31 @@ function createRealestateServer() {
           nameContains: variant,
           districtCode,
           legalDong,
-          limit: 20
+          limit: APARTMENT_SEARCH_FALLBACK_LIMIT
         });
         for (const row of variantRows) {
           const aliases = getApartmentAliases(row.apartmentName);
           candidateMap.set(`${row.districtCode}|${row.legalDong}|${row.apartmentName}`, { ...row, aliases });
         }
-        if (candidateMap.size >= 40) break;
+        if (candidateMap.size >= MAX_KEYWORD_SEARCH_CANDIDATES) break;
       }
 
-      let candidates = [...candidateMap.values()]
-        .sort((a, b) => scoreCandidate(b, keywordVariants, legalDong) - scoreCandidate(a, keywordVariants, legalDong))
-        .slice(0, 8);
+      let candidates = sortCandidates([...candidateMap.values()], keywordVariants, legalDong);
       let fallbackMode = "none";
 
       if (candidates.length === 0 && (districtCode || legalDong)) {
-        candidates = (await searchApartmentMetadata({
+        candidates = await pickTopCandidates({
           districtCode,
           legalDong,
-          limit: 200
-        }))
-          .map((row) => ({ ...row, aliases: getApartmentAliases(row.apartmentName) }))
-          .sort((a, b) => scoreCandidate(b, keywordVariants, legalDong) - scoreCandidate(a, keywordVariants, legalDong))
-          .slice(0, 8);
+          limit: APARTMENT_SEARCH_FALLBACK_LIMIT
+        }, keywordVariants, legalDong);
         fallbackMode = "regional";
       }
 
       if (candidates.length === 0) {
-        candidates = (await searchApartmentMetadata({
-          limit: 20
-        }))
-          .map((row) => ({ ...row, aliases: getApartmentAliases(row.apartmentName) }))
-          .sort((a, b) => scoreCandidate(b, keywordVariants, legalDong) - scoreCandidate(a, keywordVariants, legalDong))
-          .slice(0, 8);
+        candidates = await pickTopCandidates({
+          limit: MAX_APARTMENT_SEARCH_LIMIT,
+        }, keywordVariants, legalDong);
         fallbackMode = "global";
       }
 
@@ -370,7 +658,7 @@ function createRealestateServer() {
     "search_apartment_candidates",
     {
       title: "아파트 단지 메타 검색 (선택 유도용)",
-      description: `사용자의 검색어(예: '분당 정자 화인아파트', '청송마을 화인아파트')가 불명확하여 정확한 단지명을 특정할 수 없을 때 후보군을 검색하고 UI에 보여줍니다.
+      description: `사용자가 아파트 단지명을 언급하며 시세/매물/통계를 물어볼 때, 이름이 불명확하거나 정확한 단지명을 특정하기 위해 **가장 먼저** 호출하여 후보군을 검색하고 UI에 보여주는 도구입니다.
 keyword는 원문 그대로 입력해도 됩니다. 서버에서 내부적으로 공백/접미어(아파트, 단지, 마을)를 정규화해 여러 변형으로 검색합니다.
 만약 키워드 검색 결과가 없다면, 제공된 districtCode나 legalDong을 활용해 해당 지역의 단지 목록을 넓게 가져옵니다. 지역 정보도 없으면 전체 인기 단지 후보를 제한적으로 제공합니다.
 이 도구를 호출한 후에는 여러 개의 리스트가 반환된다면 사용자에게 "검색된 후보 중 어떤 단지를 찾으시나요?"라고 반드시 되물어서 확인받은 후 원본 질문에 대한 SQL 쿼리를 다시 진행하세요.
@@ -427,6 +715,71 @@ UI에서 후보를 클릭하면 \`select_apartment_candidate\` 도구를 통해 
     })
   );
 
+  const fetchRecentStatsByAddress = async (address, tradeType, areaM2) => {
+    const tokens = normalizeText(address).split(/\s+/);
+    const apartmentNameInput = tokens[tokens.length - 1];
+
+    if (!apartmentNameInput) return null;
+    
+    const normalizedInput = normalizeLookupKey(apartmentNameInput);
+
+    const query = `
+      SELECT apartment_name, trade_type, area_m2, avg_price_krw, avg_deposit_krw, avg_monthly_rent_krw, tx_count
+      FROM re_recent_area_stats
+      WHERE REPLACE(REPLACE(REPLACE(apartment_name, '(', ''), ')', ''), ' ', '') = :norm_name
+         OR apartment_name = :apt_name
+      ORDER BY area_m2 ASC, trade_type DESC
+    `;
+
+    const rows = await executeSelectQuery(query, {
+      norm_name: normalizedInput,
+      apt_name: apartmentNameInput
+    });
+
+    if (rows.length === 0) return null;
+    
+    // Default to the actual matched apartment name
+    const apartmentName = rows[0].APARTMENT_NAME;
+
+    let parsedData = rows.map((row) => ({
+      type: row.TRADE_TYPE,
+      area: row.AREA_M2,
+      avgPrice: row.AVG_PRICE_KRW,
+      avgDeposit: row.AVG_DEPOSIT_KRW,
+      avgRent: row.AVG_MONTHLY_RENT_KRW,
+      count: row.TX_COUNT,
+    }));
+
+    if (areaM2) {
+      parsedData.sort((a, b) => Math.abs(a.area - areaM2) - Math.abs(b.area - areaM2));
+      const closestArea = parsedData[0].area;
+      parsedData = parsedData.filter((d) => Math.abs(d.area - closestArea) <= 3);
+      
+      if (tradeType) {
+        parsedData.sort((a, b) => {
+          if (a.type === tradeType && b.type !== tradeType) return -1;
+          if (a.type !== tradeType && b.type === tradeType) return 1;
+          return 0;
+        });
+      }
+    } else {
+      if (tradeType) {
+        parsedData.sort((a, b) => {
+          if (a.type === tradeType && b.type !== tradeType) return -1;
+          if (a.type !== tradeType && b.type === tradeType) return 1;
+          return 0;
+        });
+      }
+      parsedData = parsedData.slice(0, 4);
+    }
+
+    return {
+      address,
+      apartmentName,
+      data: parsedData.slice(0, 4),
+    };
+  };
+
   server.registerTool(
     "get_location_ui",
     {
@@ -449,8 +802,12 @@ UI에서 후보를 클릭하면 \`select_apartment_candidate\` 도구를 통해 
     },
     async ({ addresses, title, searchPattern }) => {
       console.log("[mcp] get_location_ui called", { addresses, title, searchPattern });
-      
-      const targetAddresses = (addresses || []).filter(addr => !!addr);
+
+      const targetAddresses = dedupePreservingOrder(
+        (addresses || [])
+          .map((addr) => normalizeText(addr))
+          .filter((addr) => !!addr)
+      );
 
       if (targetAddresses.length === 0) {
         return {
@@ -461,45 +818,14 @@ UI에서 후보를 클릭하면 \`select_apartment_candidate\` 도구를 통해 
 
       // Fetch recent stats for these addresses if they are apartment names
       const stats = [];
+      const tradeType = getTradeTypeForMap(searchPattern?.type);
+      const areaM2 = searchPattern?.area ?? null;
+
       try {
         for (const addr of targetAddresses) {
-          const tokens = addr.split(' ');
-          const aptName = tokens[tokens.length - 1];
-          
-          if (aptName) {
-            const query = `
-              SELECT trade_type, area_m2, avg_price_krw, avg_deposit_krw, avg_monthly_rent_krw, tx_count
-              FROM re_recent_area_stats
-              WHERE apartment_name = :apt_name
-                AND (:trade_type IS NULL OR trade_type = :trade_type)
-                AND (:area_m2 IS NULL OR TRUNC(area_m2) = TRUNC(:area_m2))
-              ORDER BY updated_at DESC
-            `;
-
-            const tradeType = searchPattern?.type 
-              ? (searchPattern.type === '매매' ? 'SALE' : (searchPattern.type === '전세' ? 'JEONSE' : 'WOLSE'))
-              : null;
-
-            const rows = await executeSelectQuery(query, {
-              apt_name: aptName,
-              trade_type: tradeType,
-              area_m2: searchPattern?.area ?? null
-            });
-            
-            if (rows.length > 0) {
-              stats.push({
-                address: addr,
-                apartmentName: aptName,
-                data: rows.map(r => ({
-                  type: r.TRADE_TYPE,
-                  area: r.AREA_M2,
-                  avgPrice: r.AVG_PRICE_KRW,
-                  avgDeposit: r.AVG_DEPOSIT_KRW,
-                  avgRent: r.AVG_MONTHLY_RENT_KRW,
-                  count: r.TX_COUNT
-                }))
-              });
-            }
+          const recentStats = await fetchRecentStatsByAddress(addr, tradeType, areaM2);
+          if (recentStats) {
+            stats.push(recentStats);
           }
         }
       } catch (err) {

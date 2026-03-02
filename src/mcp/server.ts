@@ -1,7 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express from "express";
 import cors from "cors";
+import crypto from "node:crypto";
 import { z } from "zod";
 import { DISTRICT_MAP } from "../lib/districts.js";
 import {
@@ -272,24 +274,31 @@ const createMcpServer = (): McpServer => {
 
 const app = express();
 app.use(cors());
+app.use(express.json());
+app.use((req, _res, next) => {
+  if (req.path === "/mcp" || req.path === "/sse" || req.path === "/messages") {
+    console.log(`[http] ${req.method} ${req.path}`);
+  }
+  next();
+});
 
-const sessions = new Map<string, { server: McpServer; transport: SSEServerTransport }>();
+const sseSessions = new Map<string, { server: McpServer; transport: SSEServerTransport }>();
+const streamableSessions = new Map<string, { server: McpServer; transport: StreamableHTTPServerTransport }>();
 
 app.get("/sse", async (req, res) => {
   const server = createMcpServer();
   const transport = new SSEServerTransport("/messages", res);
   const sessionId = transport.sessionId;
-  sessions.set(sessionId, { server, transport });
+  sseSessions.set(sessionId, { server, transport });
 
   transport.onclose = () => {
-    // Do not call server.close() here; server.close() closes transport and would recurse.
-    sessions.delete(sessionId);
+    sseSessions.delete(sessionId);
   };
 
   try {
     await server.connect(transport);
   } catch (error) {
-    sessions.delete(sessionId);
+    sseSessions.delete(sessionId);
     throw error;
   }
 });
@@ -305,7 +314,7 @@ app.post("/messages", async (req, res) => {
     return;
   }
 
-  const session = sessions.get(sessionId);
+  const session = sseSessions.get(sessionId);
   if (!session) {
     res.status(404).send("Unknown sessionId");
     return;
@@ -321,28 +330,84 @@ app.post("/messages", async (req, res) => {
   }
 });
 
+app.all("/mcp", async (req, res) => {
+  const rawSessionId = req.headers["mcp-session-id"];
+  const sessionId = Array.isArray(rawSessionId) ? rawSessionId[0] : rawSessionId;
+  const session = sessionId ? streamableSessions.get(sessionId) : undefined;
+  let transport = session?.transport;
+
+  try {
+    if (!transport && req.method === "POST" && !sessionId) {
+      const server = createMcpServer();
+      transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => crypto.randomUUID(),
+        enableJsonResponse: true,
+        onsessioninitialized: (newSessionId) => {
+          streamableSessions.set(newSessionId, { server, transport: transport! });
+          console.log(`[mcp] session initialized: ${newSessionId}`);
+        },
+      });
+
+      transport.onclose = () => {
+        if (transport?.sessionId) {
+          streamableSessions.delete(transport.sessionId);
+          console.log(`[mcp] session closed: ${transport.sessionId}`);
+        }
+        void server.close();
+      };
+
+      await server.connect(transport);
+    }
+
+    if (!transport) {
+      res.status(400).json({
+        jsonrpc: "2.0",
+        error: { code: -32000, message: "Invalid or missing mcp-session-id" },
+        id: null,
+      });
+      return;
+    }
+
+    await transport.handleRequest(req, res, req.body);
+  } catch (error) {
+    console.error("Error handling MCP request:", error);
+    if (!res.headersSent) {
+      res.status(500).send("Internal server error");
+    }
+  }
+});
+
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, sessions: sessions.size });
+  res.json({ ok: true, sseSessions: sseSessions.size, streamableSessions: streamableSessions.size });
 });
 
 process.on("SIGTERM", () => {
-  for (const { transport } of sessions.values()) {
+  for (const { transport } of sseSessions.values()) {
     void transport.close();
   }
-  sessions.clear();
+  for (const { transport } of streamableSessions.values()) {
+    void transport.close();
+  }
+  sseSessions.clear();
+  streamableSessions.clear();
 });
 
 process.on("SIGINT", () => {
-  for (const { transport } of sessions.values()) {
+  for (const { transport } of sseSessions.values()) {
     void transport.close();
   }
-  sessions.clear();
+  for (const { transport } of streamableSessions.values()) {
+    void transport.close();
+  }
+  sseSessions.clear();
+  streamableSessions.clear();
 });
 
 const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 app.listen(port, "0.0.0.0", () => {
-  console.log(`MCP Server running on http://0.0.0.0:${port}/sse`);
+  console.log(`MCP Server running on http://0.0.0.0:${port}/mcp (streamable)`);
+  console.log(`Legacy SSE endpoint: http://0.0.0.0:${port}/sse`);
 });
 
 app.use((_req, res) => {

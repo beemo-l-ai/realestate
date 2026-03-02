@@ -146,7 +146,8 @@ AI 에이전트가 코딩 컨텍스트를 더 잘 파악할 수 있도록 다음
 ## AWS EC2 배포 가이드
 
 운영 도메인:
-- `https://realestate-mcp.duckdns.org/sse`
+- `https://realestate-mcp.duckdns.org/mcp` (권장)
+- `https://realestate-mcp.duckdns.org/sse` (레거시)
 - DuckDNS: `https://www.duckdns.org/domains`
 
 ### 1) 사전 준비 (EC2 1회)
@@ -228,5 +229,5 @@ Caddy 사용 시:
 
 ```bash
 docker logs --tail=200 caddy
-curl -I https://realestate-mcp.duckdns.org/sse
+curl -i https://realestate-mcp.duckdns.org/mcp
 ```

@@ -3,7 +3,8 @@
 ## 역할
 - MCP 서버 생성 및 tool 등록
 - GPT 질의와 Oracle 데이터 간 인터페이스 제공
-- SSE 세션별 transport/server 라우팅 관리
+- Streamable HTTP(`/mcp`) 세션 라우팅 관리 (기본)
+- SSE(`/sse`) 세션 라우팅 관리 (레거시 호환)
 - 각 tool의 annotation(`readOnlyHint`, `openWorldHint`, `destructiveHint`) 명시
 
 ## 핵심 파일

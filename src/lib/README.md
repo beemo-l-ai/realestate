@@ -5,7 +5,7 @@
 
 ## 핵심 파일
 - `config.ts`: 환경 변수, 수도권 기본 지역 코드
-- `oracle.ts`: Oracle 풀/커넥션 관리
+- `oracle.ts`: Oracle 풀/커넥션 관리 (`ORACLE_WALLET_DIR` 내 `tnsnames.ora` 자동 탐지/중첩 폴더 보정 포함)
 - `schema.ts`: 테이블/인덱스 초기화
 - `types.ts`: 도메인 타입 정의
 - `store.ts`: 거래 저장 및 월별 집계 생성/조회

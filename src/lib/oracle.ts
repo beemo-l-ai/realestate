@@ -1,4 +1,6 @@
 import oracledb from "oracledb";
+import fs from "node:fs";
+import path from "node:path";
 import { config } from "./config.js";
 
 (oracledb as any).outFormat = (oracledb as any).OUT_FORMAT_OBJECT;
@@ -6,9 +8,32 @@ import { config } from "./config.js";
 
 let poolPromise: Promise<any> | null = null;
 
+const resolveWalletDir = (walletDir?: string): string | undefined => {
+  if (!walletDir) return undefined;
+
+  const directTns = path.join(walletDir, "tnsnames.ora");
+  if (fs.existsSync(directTns)) return walletDir;
+
+  // Common upload pattern: wallet files are nested once (e.g. oracle-wallet/oracle-wallet/*)
+  const nestedCandidates = fs
+    .readdirSync(walletDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(walletDir, entry.name));
+
+  for (const candidate of nestedCandidates) {
+    if (fs.existsSync(path.join(candidate, "tnsnames.ora"))) {
+      console.warn(`[oracle] ORACLE_WALLET_DIR adjusted to nested folder: ${candidate}`);
+      return candidate;
+    }
+  }
+
+  console.warn(`[oracle] tnsnames.ora not found under ORACLE_WALLET_DIR=${walletDir}`);
+  return walletDir;
+};
+
 export const getOraclePool = async (): Promise<any> => {
   if (!poolPromise) {
-    const walletDir = config.oracleWalletDir;
+    const walletDir = resolveWalletDir(config.oracleWalletDir);
     const walletPassword = config.oracleWalletPassword;
 
     poolPromise = (oracledb as any).createPool({

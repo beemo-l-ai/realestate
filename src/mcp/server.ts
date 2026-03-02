@@ -286,6 +286,14 @@ const sseSessions = new Map<string, { server: McpServer; transport: SSEServerTra
 const streamableSessions = new Map<string, { server: McpServer; transport: StreamableHTTPServerTransport }>();
 
 app.get("/sse", async (req, res) => {
+  const mcpSessionId = req.headers["mcp-session-id"];
+  const hasMcpSessionId = Array.isArray(mcpSessionId) ? Boolean(mcpSessionId[0]) : Boolean(mcpSessionId);
+  if (hasMcpSessionId) {
+    // If scanner/client uses /sse as streamable endpoint, keep protocol consistent.
+    await handleStreamableMcpRequest(req, res);
+    return;
+  }
+
   const server = createMcpServer();
   const transport = new SSEServerTransport("/messages", res);
   const sessionId = transport.sessionId;

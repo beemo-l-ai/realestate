@@ -28,6 +28,13 @@ const searchInputSchema = {
   toYm: z.string().regex(/^\d{6}$/),
 };
 
+const READ_ONLY_TOOL_ANNOTATIONS = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  openWorldHint: false,
+  idempotentHint: true,
+} as const;
+
 const createMcpServer = (): McpServer => {
   const server = new McpServer({
     name: "kr-realestate-mcp",
@@ -39,6 +46,7 @@ const createMcpServer = (): McpServer => {
     {
       title: "지원 지역 목록 조회",
       description: "시스템에서 지원하는 구 단위 지명 및 지역 코드 목록을 확인합니다.",
+      annotations: READ_ONLY_TOOL_ANNOTATIONS,
     },
     async () => {
       const list = Object.entries(DISTRICT_MAP)
@@ -55,6 +63,7 @@ const createMcpServer = (): McpServer => {
     {
       title: "지역 내 아파트 메타데이터 조회",
       description: "특정 지역(구/시)에 포함된 아파트의 상세 정보(보유 평형, 거래량 등)를 조회합니다. 아파트 이름 일부를 입력하여 필터링할 수 있습니다.",
+      annotations: READ_ONLY_TOOL_ANNOTATIONS,
       inputSchema: {
         districtName: z.string().optional(),
         districtCode: z.string().optional(),
@@ -98,6 +107,7 @@ const createMcpServer = (): McpServer => {
     {
       title: "수도권 실거래가 추이 조회",
       description: "수도권(서울/경기/인천) 아파트 월별 실거래가 통계를 조회합니다. 아파트명을 입력하지 않으면 구 단위 전체 통계를 보여줍니다.",
+      annotations: READ_ONLY_TOOL_ANNOTATIONS,
       inputSchema: searchInputSchema,
     },
     async (input) => {
@@ -165,6 +175,7 @@ const createMcpServer = (): McpServer => {
     {
       title: "수도권 최신 거래 사례 조회",
       description: "조건에 맞는 최근 실거래 개별 사례를 조회합니다(수도권 한정).",
+      annotations: READ_ONLY_TOOL_ANNOTATIONS,
       inputSchema: {
         region: z.enum(["서울", "경기", "인천"]).optional(),
         districtCode: z.string().optional(),
@@ -211,6 +222,7 @@ const createMcpServer = (): McpServer => {
     {
       title: "수도권 전월세 거래 사례 조회",
       description: "조건에 맞는 최근 전세/월세 거래 사례를 조회합니다.",
+      annotations: READ_ONLY_TOOL_ANNOTATIONS,
       inputSchema: {
         region: z.enum(["서울", "경기", "인천"]).optional(),
         districtCode: z.string().optional(),

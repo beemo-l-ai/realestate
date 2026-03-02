@@ -143,35 +143,90 @@ AI 에이전트가 코딩 컨텍스트를 더 잘 파악할 수 있도록 다음
 1. **디렉토리별 컨텍스트 유지보수**: 파일 변경이나 추가 로직 변경이 발생할 경우, **해당 파일이 속한 디렉토리에 있는 마크다운(`.md`) 파일도 반드시 함께 수정**해야 합니다. 각 디렉토리의 `.md` 파일은 AI 에이전트에게 중요한 컨텍스트를 전달하는 용도로 관리됩니다.
 2. **README 사전 확인**: 개발 및 변경 작업을 시작하기 전에는 **항상 프로젝트 루트의 `README.md` 파일을 한 번씩 확인**하여 전반적인 상태와 가이드를 숙지해야 합니다.
 
-## AWS EC2 로 배포 진행됨
-https://www.duckdns.org/domains
-https://realestate-mcp.duckdns.org/sse 로 배포 됨
+## AWS EC2 배포 가이드
 
-### EC2 배포/재시작 스크립트
+운영 도메인:
+- `https://realestate-mcp.duckdns.org/sse`
+- DuckDNS: `https://www.duckdns.org/domains`
 
-EC2 서버에서 프로젝트 루트(`/home/ubuntu/realestate`) 기준:
+### 1) 사전 준비 (EC2 1회)
+
+보안그룹 인바운드:
+- `22/tcp` (SSH)
+- `80/tcp` (HTTP)
+- `443/tcp` (HTTPS, Caddy 사용 시)
+
+EC2에서 Docker 자동 시작:
+
+```bash
+sudo systemctl enable docker
+sudo systemctl start docker
+```
+
+### 2) 필수 파일 업로드 (로컬 -> EC2)
+
+로컬에서 실행:
+
+```bash
+# 프로젝트/배포 디렉토리 생성
+ssh -i ./AWS-EC2.pem ubuntu@43.201.97.199 "mkdir -p ~/realestate"
+
+# wallet 업로드
+scp -i ./AWS-EC2.pem -r /Users/leesungju/Downloads/oracle-wallet ubuntu@43.201.97.199:~/realestate/
+
+# .env 업로드
+scp -i ./AWS-EC2.pem /Users/leesungju/Documents/git/realestate/.env ubuntu@43.201.97.199:~/realestate/.env
+```
+
+EC2에서 권한 정리:
+
+```bash
+cd ~/realestate
+chmod 600 .env
+chmod -R go-rwx oracle-wallet
+```
+
+### 3) 배포/재시작 (EC2에서 반복 실행)
+
+프로젝트 루트(`/home/ubuntu/realestate`)에서:
 
 ```bash
 chmod +x ./deploy-ec2.sh
 ./deploy-ec2.sh
 ```
 
-기본 동작:
+스크립트(`deploy-ec2.sh`) 기본 동작:
 - Docker 이미지 재빌드
-- 기존 `realestate-app` 컨테이너 제거 후 재생성
-- `--restart unless-stopped`로 재부팅 후 자동 복구
-- `.env` 및 `oracle-wallet` 존재 여부 사전 점검
-- `caddy` 컨테이너가 실행 중이면 내부 네트워크 모드로 실행, 아니면 `80:8080`으로 외부 노출
+- 기존 `realestate-app` 제거 후 재생성
+- `--restart unless-stopped` 적용 (세션 종료/재부팅 후 자동 복구)
+- `.env`, `oracle-wallet`, `Dockerfile` 사전 점검
+- `caddy`가 실행 중이면 내부 전용 네트워크 모드로 실행
+- `caddy`가 없으면 `80:8080` 포트로 직접 노출
 
-주요 옵션(환경변수):
+### 4) 실행 모드 옵션
 
 ```bash
-# 캐시 없이 새로 빌드
+# 캐시 없이 재빌드
 NO_CACHE=true ./deploy-ec2.sh
 
-# Caddy를 쓰지 않고 포트 직접 노출
+# Caddy 없이 직접 포트 노출
 INTERNAL_ONLY=false HOST_PORT=8080 CONTAINER_PORT=8080 ./deploy-ec2.sh
 
-# Caddy 뒤에서 내부 전용으로 실행
+# Caddy 뒤에서 내부 전용 실행
 INTERNAL_ONLY=true ./deploy-ec2.sh
+```
+
+### 5) 점검 명령어
+
+```bash
+docker ps
+docker logs --tail=200 realestate-app
+curl -I http://localhost:8080
+```
+
+Caddy 사용 시:
+
+```bash
+docker logs --tail=200 caddy
+curl -I https://realestate-mcp.duckdns.org/sse
 ```

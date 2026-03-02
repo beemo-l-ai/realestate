@@ -1,5 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import express from "express";
+import cors from "cors";
 import { z } from "zod";
 import { DISTRICT_MAP } from "../lib/districts.js";
 import {
@@ -252,12 +254,26 @@ server.registerTool(
   },
 );
 
-const main = async (): Promise<void> => {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-};
+const app = express();
+app.use(cors());
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
+let transport: SSEServerTransport | null = null;
+
+app.get("/sse", async (req, res) => {
+  transport = new SSEServerTransport("/messages", res);
+  await server.connect(transport);
+});
+
+app.post("/messages", async (req, res) => {
+  if (transport) {
+    await transport.handlePostMessage(req, res);
+  } else {
+    res.status(503).send("SSE transport not initialized yet.");
+  }
+});
+
+const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+
+app.listen(port, "0.0.0.0", () => {
+  console.log(`MCP Server running on http://0.0.0.0:${port}/sse`);
 });

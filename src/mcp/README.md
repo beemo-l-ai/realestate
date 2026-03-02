@@ -3,6 +3,7 @@
 ## 역할
 - MCP 서버 생성 및 tool 등록
 - GPT 질의와 Oracle 데이터 간 인터페이스 제공
+- SSE 세션별 transport/server 라우팅 관리
 
 ## 핵심 파일
 - `server.ts`: 툴 스키마, SQL 조회, 응답 포맷

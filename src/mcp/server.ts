@@ -330,7 +330,7 @@ app.post("/messages", async (req, res) => {
   }
 });
 
-app.all("/mcp", async (req, res) => {
+const handleStreamableMcpRequest = async (req: express.Request, res: express.Response) => {
   const rawSessionId = req.headers["mcp-session-id"];
   const sessionId = Array.isArray(rawSessionId) ? rawSessionId[0] : rawSessionId;
   const session = sessionId ? streamableSessions.get(sessionId) : undefined;
@@ -375,7 +375,12 @@ app.all("/mcp", async (req, res) => {
       res.status(500).send("Internal server error");
     }
   }
-});
+};
+
+app.all("/mcp", handleStreamableMcpRequest);
+// Some scanners still try POST /sse before/while probing legacy SSE.
+// Accepting streamable MCP on POST /sse improves compatibility.
+app.post("/sse", handleStreamableMcpRequest);
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, sseSessions: sseSessions.size, streamableSessions: streamableSessions.size });

@@ -146,3 +146,32 @@ AI 에이전트가 코딩 컨텍스트를 더 잘 파악할 수 있도록 다음
 ## AWS EC2 로 배포 진행됨
 https://www.duckdns.org/domains
 https://realestate-mcp.duckdns.org/sse 로 배포 됨
+
+### EC2 배포/재시작 스크립트
+
+EC2 서버에서 프로젝트 루트(`/home/ubuntu/realestate`) 기준:
+
+```bash
+chmod +x ./deploy-ec2.sh
+./deploy-ec2.sh
+```
+
+기본 동작:
+- Docker 이미지 재빌드
+- 기존 `realestate-app` 컨테이너 제거 후 재생성
+- `--restart unless-stopped`로 재부팅 후 자동 복구
+- `.env` 및 `oracle-wallet` 존재 여부 사전 점검
+- `caddy` 컨테이너가 실행 중이면 내부 네트워크 모드로 실행, 아니면 `80:8080`으로 외부 노출
+
+주요 옵션(환경변수):
+
+```bash
+# 캐시 없이 새로 빌드
+NO_CACHE=true ./deploy-ec2.sh
+
+# Caddy를 쓰지 않고 포트 직접 노출
+INTERNAL_ONLY=false HOST_PORT=8080 CONTAINER_PORT=8080 ./deploy-ec2.sh
+
+# Caddy 뒤에서 내부 전용으로 실행
+INTERNAL_ONLY=true ./deploy-ec2.sh
+```

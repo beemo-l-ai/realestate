@@ -504,23 +504,21 @@ function createRealestateServer() {
 - 단지명이 불명확하면 가장 먼저 'search_apartment_candidates' 도구를 호출하여 정확한 이름을 확인받으세요.
 - 답변 시 "실시간 매물"이라는 표현은 피하고 "실거래 사례 기준" 또는 "실거래 사례 기반 추천"으로 명시하세요.`,
       inputSchema: {
-        sqlQuery: z.string().describe("실행할 통계/건수 추출용 Oracle SQL SELECT 구문"),
-        reason: z.string().min(1).describe("이 SQL이 필요한 이유(한 줄). 단순 목록성 조회 대신 통계/집계·랭킹 목적이어야 합니다.")
+        sqlQuery: z.string().describe("실행할 통계/건수 추출용 Oracle SQL SELECT 구문")
       },
       _meta: {
         "openai/toolInvocation/invoking": "부동산 고급 쿼리 분석 중...",
         "openai/toolInvocation/invoked": "쿼리 결과물 획득"
       }
     },
-    async ({ sqlQuery, reason }) => {
+    async ({ sqlQuery }) => {
       queryCount++;
       try {
         if (isPropertyListingQuery(sqlQuery)) {
           return {
             content: [{ 
               type: "text",
-              text: `[안내] 단순 거래 상세 목록 조회는 'search_properties'로 대체하는 것이 권장됩니다.
-사용자가 요청한 목적: ${normalizeText(reason)}`
+              text: "[안내] 단순 거래 상세 목록 조회는 'search_properties'로 대체하는 것이 권장됩니다."
             }],
             isError: true
           };

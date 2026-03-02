@@ -15,7 +15,7 @@
 ## 변경 포인트(Quick Notes)
 
 - `src/server.js`는 `search_properties` 결과를 `addressesForMap` + `widgetUrl`까지 생성해 `get_location_ui` 또는 링크 응답에 전달합니다.
-- `query_realestate_db`는 `reason` 필드와 단순 목록형 SQL 차단 규칙이 있어, 거래 상세 단건 목록 조회는 `search_properties` 경로로 유도됩니다.
+- `query_realestate_db`는 단순 목록형 SQL 차단 규칙이 있어, 거래 상세 단건 목록 조회는 `search_properties` 경로로 유도됩니다.
 - `search_properties`는 문서 기준 필드(`districtName`, `region`, `legalDong`, `min/maxPriceEok`)를 함께 지원해 LLM 규격 매핑이 쉬워집니다.
 
 ## 빠른 작업 방법

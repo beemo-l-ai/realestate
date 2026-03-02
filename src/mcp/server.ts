@@ -270,8 +270,8 @@ app.get("/sse", async (req, res) => {
   sessions.set(sessionId, { server, transport });
 
   transport.onclose = () => {
+    // Do not call server.close() here; server.close() closes transport and would recurse.
     sessions.delete(sessionId);
-    void server.close();
   };
 
   try {
@@ -314,15 +314,15 @@ app.get("/health", (_req, res) => {
 });
 
 process.on("SIGTERM", () => {
-  for (const { server } of sessions.values()) {
-    void server.close();
+  for (const { transport } of sessions.values()) {
+    void transport.close();
   }
   sessions.clear();
 });
 
 process.on("SIGINT", () => {
-  for (const { server } of sessions.values()) {
-    void server.close();
+  for (const { transport } of sessions.values()) {
+    void transport.close();
   }
   sessions.clear();
 });
